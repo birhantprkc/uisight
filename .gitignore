@@ -1,0 +1,8 @@
+node_modules/
+outputs/
+ciktilar/
+live/
+canli/
+*.log
+*.vsix
+package-lock.json

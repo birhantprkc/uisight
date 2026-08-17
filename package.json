@@ -1,0 +1,50 @@
+{
+  "name": "uisight",
+  "version": "0.1.0",
+  "description": "AI and human watch the same live browser session — mobile + desktop side by side, with a measurement engine (contrast, touch targets, theme drift) that reports findings as text your AI agent can act on. MCP server included.",
+  "type": "module",
+  "license": "MIT",
+  "author": "SoloLabs (Yusuf Cemre San)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sololabstr/uisight.git"
+  },
+  "homepage": "https://github.com/sololabstr/uisight#readme",
+  "bugs": "https://github.com/sololabstr/uisight/issues",
+  "bin": {
+    "uisight": "./src/cli.mjs",
+    "uisight-panel": "./src/server.mjs",
+    "uisight-mcp": "./src/mcp.mjs"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "README.tr.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "playwright",
+    "mobile",
+    "responsive",
+    "qa",
+    "accessibility",
+    "wcag",
+    "contrast",
+    "ai",
+    "claude",
+    "cursor",
+    "vibe-coding",
+    "screenshot",
+    "device-emulation"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "playwright": "^1.62.0",
+    "zod": "^4.4.3"
+  }
+}
