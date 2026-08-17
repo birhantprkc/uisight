@@ -23,10 +23,12 @@ import { mkdirSync, writeFileSync, readdirSync, readFileSync, renameSync } from 
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
+import { homedir } from 'node:os';
 import { PROFILLER, cihazAyari, DENETIM_KODU } from './cli.mjs';
 
 const KOK = resolve(fileURLToPath(new URL('.', import.meta.url)));
-const CANLI_DIR = join(KOK, 'live');
+// Live artifacts live under the user's home — never inside the package (npx → node_modules).
+const CANLI_DIR = join(homedir(), '.uisight', 'live');
 const ISARET_DIR = join(CANLI_DIR, 'marks');
 const OKUNDU_DIR = join(ISARET_DIR, 'read');
 for (const d of [CANLI_DIR, ISARET_DIR, OKUNDU_DIR]) mkdirSync(d, { recursive: true });

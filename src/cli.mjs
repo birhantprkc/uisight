@@ -395,7 +395,9 @@ async function tur(o) {
   const host = new URL(o.url).host.replace(/[^a-z0-9.-]/gi, '_');
   const zaman = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   // Izle modunda sabit klasor: tarayici sayfasi ayni adreste kalsin, kendi kendine yenilensin.
-  const ciktiDir = o.izle ? join(KOK, 'outputs', `_watch-${host}`) : join(KOK, 'outputs', `${host}-${zaman}`);
+  // Outputs go to the USER's cwd — never into the package dir (npx installs land in node_modules).
+  const ciktiKok = join(process.cwd(), 'uisight-outputs');
+  const ciktiDir = o.izle ? join(ciktiKok, `_watch-${host}`) : join(ciktiKok, `${host}-${zaman}`);
   mkdirSync(ciktiDir, { recursive: true });
 
   const kayitlar = [];
