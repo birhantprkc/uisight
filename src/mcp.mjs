@@ -23,6 +23,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,9 +46,17 @@ async function req(path, opts = {}, timeoutMs = 15000) {
   } finally { clearTimeout(t); }
 }
 const getStatus = async (ms = 2000) => (await req('/durum', {}, ms)).json();
+
+// Panel, mutasyon uclari icin token ister (CSRF kesici). Token port basina yerel
+// dosyada; her cagride taze okunur (panel yeniden basladiginda token degisir).
+const tokenOku = () => {
+  try { return readFileSync(join(homedir(), '.uisight', 'live', `token-${PORT}`), 'utf8').trim(); } catch { return ''; }
+};
 async function action(body) {
   const r = await req('/eylem', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-uisight-token': tokenOku() },
+    body: JSON.stringify(body),
   }, 30000);
   return r.json();
 }
@@ -57,17 +66,20 @@ const isReady = async (ms) => {
   const d = await getStatus(ms);
   return !!d?.oturumlar?.length;
 };
-let spawned = false;
+let child = null;
 async function ensureEngine() {
   try { if (await isReady(1500)) return; } catch {}
-  if (!spawned) {
-    spawned = true;
+  // Panel kapandiysa YENIDEN baslat: tek-seferlik bayrak, cokme sonrasi araci
+  // kalici olarak olu birakiyordu. shell:true YOK — argv dizisi Node tarafindan
+  // guvenli gecirilir (shell'de UISIGHT_URL enjeksiyon yuzeyi acardi).
+  if (!child || child.exitCode !== null || child.killed) {
     const url = process.env.UISIGHT_URL || process.env.MOBILQA_URL || 'http://localhost:3000';
     log(`panel not running on ${PORT} — starting (${url})`);
-    const p = spawn('node', [`"${join(ROOT, 'server.mjs')}"`, `"${url}"`, '--no-open'], {
-      cwd: ROOT, windowsHide: true, shell: true, detached: true, stdio: 'ignore',
+    child = spawn(process.execPath, [join(ROOT, 'server.mjs'), url, '--no-open'], {
+      cwd: ROOT, windowsHide: true, detached: true, stdio: 'ignore',
     });
-    p.unref();
+    child.on('error', (e) => log(`spawn failed: ${e.message}`));
+    child.unref();
   }
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 1000));
@@ -103,7 +115,11 @@ function inspectionText(results) {
 }
 
 // --- Server + bilingual tool registration ---
-const server = new McpServer({ name: 'uisight', version: '0.1.0' });
+// Surumu package.json'dan oku — sabit-kodlu deger her yayinda bayatliyordu.
+const SURUM = (() => {
+  try { return JSON.parse(readFileSync(join(ROOT, '..', 'package.json'), 'utf8')).version; } catch { return '0.0.0'; }
+})();
+const server = new McpServer({ name: 'uisight', version: SURUM });
 
 const SESSION = z.enum(['desktop', 'mobile', 'web', 'mobil']).optional()
   .describe(TR ? "Hedef oturum: 'desktop' (masaustu) | 'mobile' (telefon). Varsayilan: mobile" : "Target session: 'desktop' | 'mobile'. Default: mobile");
@@ -146,7 +162,7 @@ tool('goto', 'git',
     await ensureEngine();
     const r = await action({ tip: 'git', url });
     const d = await getStatus().catch(() => null);
-    return { content: [text(r.ok ? `navigated: ${d?.url || url}` : `error: ${r.mesaj}`)] };
+    return { content: [text(r.ok ? `navigated: ${d?.url || url}` : `error: ${r.mesaj}`)], ...(r.ok ? {} : { isError: true }) };
   });
 
 tool('tap', 'tikla',
@@ -166,7 +182,7 @@ tool('type_text', 'yaz',
   async ({ session, text: t, key }) => {
     await ensureEngine();
     const r = await action({ tip: 'tus', oturum: session ? sid(session) : undefined, text: t, key });
-    return { content: [text(r.ok ? 'typed' : `error: ${r.mesaj}`)] };
+    return { content: [text(r.ok ? 'typed' : `error: ${r.mesaj}`)], ...(r.ok ? {} : { isError: true }) };
   });
 
 tool('scroll', 'kaydir',
@@ -176,7 +192,7 @@ tool('scroll', 'kaydir',
   async ({ session, dy }) => {
     await ensureEngine();
     const r = await action({ tip: 'kaydir', oturum: session ? sid(session) : undefined, dy });
-    return { content: [text(r.ok ? `scrolled ${dy}px (${r.oturum})` : `error: ${r.mesaj}`)] };
+    return { content: [text(r.ok ? `scrolled ${dy}px (${r.oturum})` : `error: ${r.mesaj}`)], ...(r.ok ? {} : { isError: true }) };
   });
 
 tool('set_device', 'cihaz_degistir',
@@ -187,7 +203,7 @@ tool('set_device', 'cihaz_degistir',
     await ensureEngine();
     const r = await action({ tip: 'cihaz', oturum: session ? sid(session) : undefined, cihaz: device, tema: theme });
     const d = await getStatus().catch(() => null);
-    return { content: [text(r.ok ? `done — sessions: ${d?.oturumlar?.map((o) => `${o.id}=${o.cihaz}`).join(', ')} · theme=${d?.tema}` : `error: ${r.mesaj}`)] };
+    return { content: [text(r.ok ? `done — sessions: ${d?.oturumlar?.map((o) => `${o.id}=${o.cihaz}`).join(', ')} · theme=${d?.tema}` : `error: ${r.mesaj}`)], ...(r.ok ? {} : { isError: true }) };
   });
 
 tool('status', 'durum',

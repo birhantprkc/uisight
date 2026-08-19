@@ -16,8 +16,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exec } from 'node:child_process';
-
-const KOK = resolve(fileURLToPath(new URL('.', import.meta.url)));
+import { platform } from 'node:os';
 
 // --- Cihaz profilleri -------------------------------------------------------
 // webkit = iOS Safari'nin gercek render motoru (Windows'ta calisir).
@@ -515,7 +514,12 @@ async function tur(o) {
     if (d.gorselAltsiz) satirlar.push(`- ⚪ images without alt: ${d.gorselAltsiz}`);
     if (k.konsol.length) { bulguSayisi++; satirlar.push(`- 🔴 **Console/JS errors** (${k.konsol.length}):`); for (const c of k.konsol.slice(0, 5)) satirlar.push(`  - ${c.tip}: ${c.mesaj}`); }
     if (k.ag.length) { bulguSayisi++; satirlar.push(`- 🔴 **Failed requests** (${k.ag.length}):`); for (const a of k.ag.slice(0, 5)) satirlar.push(`  - ${a.kod} ${a.url}`); }
-    if (!d.yatayTasma && !d.kucukHedefler?.length && !d.minikYazi?.length && !k.konsol.length && !k.ag.length) satirlar.push('- ✅ automated checks clean (still eyeball the image)');
+    // "Temiz" iddiasi TUM bulgu tiplerini kapsamali: gorunmez metin/kontrast/buton
+    // atlaninca rapor kendi bulgusunun altina "clean" yaziyordu (celiski).
+    const bulguVar = d.yatayTasma || d.kucukHedefler?.length || d.minikYazi?.length
+      || d.gorunmezMetin?.length || d.dusukKontrast?.length || d.butonSorun?.length
+      || k.konsol.length || k.ag.length;
+    if (!bulguVar) satirlar.push('- ✅ automated checks clean (still eyeball the image)');
     satirlar.push('');
   }
   // --- Tema karsilastirmasi: light vs dark ayni renkse tema toggle'a cevap vermiyor demektir ---
@@ -565,7 +569,12 @@ async function tur(o) {
 
   if (o.ac && !global.__acildi) {
     global.__acildi = true; // izle modunda her turda yeni sekme acma
-    exec(`start "" "${galeriYol}"`, { shell: 'cmd.exe' });
+    // Platforma gore ac: `start` yalniz Windows'ta var (macOS: open, Linux: xdg-open).
+    const p = platform();
+    const komut = p === 'win32' ? `start "" "${galeriYol}"` : p === 'darwin' ? `open "${galeriYol}"` : `xdg-open "${galeriYol}"`;
+    exec(komut, p === 'win32' ? { shell: 'cmd.exe' } : {}, (e) => {
+      if (e) console.error(`  ! could not open gallery (${p}) — open manually: ${galeriYol}`);
+    });
   }
 }
 

@@ -23,10 +23,11 @@ import { mkdirSync, writeFileSync, readdirSync, readFileSync, renameSync } from 
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { PROFILLER, cihazAyari, DENETIM_KODU } from './cli.mjs';
 
-const KOK = resolve(fileURLToPath(new URL('.', import.meta.url)));
+
 // Live artifacts live under the user's home — never inside the package (npx → node_modules).
 const CANLI_DIR = join(homedir(), '.uisight', 'live');
 const ISARET_DIR = join(CANLI_DIR, 'marks');
@@ -51,6 +52,34 @@ const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || arg(
 const ACMA = argv.includes('--no-open');
 const TEK = argv.includes('--single');
 const ZORLA_YEDEK = (process.env.UISIGHT_FALLBACK || process.env.MOBILQA_YEDEK) === '1';
+
+// --- Guvenlik: bu araç bir tarayici oturumunu SÜREN yerel bir sunucu. Iki katman:
+//   (1) yalniz loopback'e bind (LAN erisimini keser) — bkz. listen() asagida.
+//   (2) Host allowlist (DNS-rebinding kesici, TÜM uclar) + eylem token (CSRF kesici, mutasyon uclari).
+// Panel kendi origin'inden fetch ederken token'i header'da yollar; kotu niyetli baska
+// bir sekme (ayni makinede localhost'a POST) token'i bilemez ve text/plain-form hilesi
+// custom header EKLEYEMEZ → reddedilir.
+const TOKEN = randomUUID();
+// Token'i port basina yerel dosyaya yaz: MCP sunucusu (ayri surec, ayni makine)
+// bunu okuyup header'da gonderir. Capraz-site bir sayfa bu dosyayi OKUYAMAZ.
+const TOKEN_DOSYA = join(CANLI_DIR, `token-${PORT}`);
+
+/** Platforma gore tarayici acar. `start` yalniz Windows'ta var; macOS/Linux'ta
+ *  sessizce basarisiz oluyordu (exec callback'siz → hicbir iz yok). */
+export function tarayicidaAc(adres) {
+  const p = platform();
+  const komut = p === 'win32' ? `start "" "${adres}"` : p === 'darwin' ? `open "${adres}"` : `xdg-open "${adres}"`;
+  exec(komut, p === 'win32' ? { shell: 'cmd.exe' } : {}, (e) => {
+    if (e) console.error(`  ! could not open browser (${p}) — open manually: ${adres}`);
+  });
+}
+function hostGuvenli(req) {
+  const h = String(req.headers.host || '');
+  const port = h.split(':')[1] || '';
+  const ana = h.split(':')[0].toLowerCase();
+  return (ana === 'localhost' || ana === '127.0.0.1' || ana === '[::1]' || ana === '::1')
+    && (port === '' || port === String(PORT));
+}
 
 // --- Genel durum ---
 const durum = {
@@ -232,10 +261,16 @@ async function eylemUygula(g) {
 
     case 'cihaz': {
       // {oturum, cihaz} -> o oturumun profili degisir; {tema} oturumsuz -> TUM oturumlar yeni temayla kurulur.
-      if (g.tema) durum.tema = g.tema;
+      // Oturum id'si dosya adina giriyor (last-<id>.jpg) → path-traversal'i burada kes.
+      if (g.oturum && !/^[a-zA-Z0-9_-]{1,32}$/.test(String(g.oturum))) {
+        return { ok: false, mesaj: 'invalid session id' };
+      }
+      // Tema TEK oturuma uygulanacaksa global alani degistirme: panel/status
+      // "dark" derken dokunulmayan oturum hala light kalabiliyordu (yalan durum).
+      if (g.tema && !g.oturum) durum.tema = g.tema;
       if (g.oturum && g.cihaz) {
         const mevcut = oturumlar.get(g.oturum);
-        await oturumKur(g.oturum, g.cihaz, durum.tema);
+        await oturumKur(g.oturum, g.cihaz, g.tema || durum.tema);
         if (!mevcut) kayitEkle(g.oturum, 'oturum', `yeni oturum: ${g.cihaz}`);
       } else {
         for (const o of [...oturumlar.values()]) await oturumKur(o.id, g.cihaz || o.cihazKey, durum.tema);
@@ -248,6 +283,8 @@ async function eylemUygula(g) {
       const hedefler = g.oturum ? [oturumlar.get(g.oturum)].filter(Boolean) : [...oturumlar.values()];
       for (const o of hedefler) {
         try {
+          // Timeout: hedef sayfada engelleyici bir native dialog varsa evaluate suresiz asili kalirdi.
+          o.sayfa.setDefaultTimeout(20000);
           const d = await o.sayfa.evaluate(DENETIM_KODU, { mobil: o.profil.mobil !== false });
           sonuclar.push({ oturum: o.id, cihaz: o.cihazKey, etiket: o.profil.etiket, tema: durum.tema, url: durum.url, denetim: d });
         } catch (e) {
@@ -312,14 +349,38 @@ function isaretleriOku(temizle) {
 }
 
 // --- HTTP ---
-const govdeOku = (req) => new Promise((c) => { let s = ''; req.on('data', (d) => (s += d)); req.on('end', () => { try { c(JSON.parse(s || '{}')); } catch { c({}); } }); });
+// 1 MB tavan: sinirsiz birikim bellek tuketimine acik kapi birakiyordu.
+const GOVDE_TAVAN = 1024 * 1024;
+const govdeOku = (req) => new Promise((c) => {
+  let s = '';
+  req.on('data', (d) => {
+    s += d;
+    if (s.length > GOVDE_TAVAN) { s = ''; req.destroy(); c({}); }
+  });
+  req.on('end', () => { try { c(JSON.parse(s || '{}')); } catch { c({}); } });
+  req.on('error', () => c({}));
+});
 
 const sunucu = createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
 
+  // DNS-rebinding kesici: saldirgan alan adi loopback'e cozulse bile Host basligi tutmaz.
+  if (!hostGuvenli(req)) {
+    res.writeHead(403, { 'content-type': 'text/plain' });
+    return res.end('forbidden host');
+  }
+
+  // Mutasyon uclarinda token ZORUNLU (CSRF kesici). Panel bunu header'da yollar;
+  // capraz-site istekler custom header ekleyemedigi icin buraya hic gelemez.
+  const MUTASYON = new Set(['/eylem']);
+  if (MUTASYON.has(u.pathname) && req.headers['x-uisight-token'] !== TOKEN) {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ ok: false, mesaj: 'invalid or missing token' }));
+  }
+
   if (u.pathname === '/') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    return res.end(PANEL_HTML);
+    return res.end(PANEL_HTML_SABLON.replace('__TOKEN__', TOKEN));
   }
 
   if (u.pathname === '/akis') {
@@ -374,7 +435,7 @@ const sunucu = createServer(async (req, res) => {
 });
 
 // --- Panel ---
-const PANEL_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
+const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>uisight — Live Panel</title>
 <style>
   :root { color-scheme: dark; }
@@ -428,11 +489,12 @@ const PANEL_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
   </div>
 </div>
 <script>
+  window.__UISIGHT_TOKEN = '__TOKEN__';
   const vp = {}; // oturum -> viewport
   let cihazListesi = [];
   let aktifOturum = 'mobil';
 
-  const ey = (g) => fetch('/eylem', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(g) }).then(r=>r.json());
+  const ey = (g) => fetch('/eylem', { method:'POST', headers:{'content-type':'application/json','x-uisight-token':window.__UISIGHT_TOKEN}, body: JSON.stringify(g) }).then(r=>r.json());
   const not = (m) => { document.getElementById('durumcu').textContent = m; setTimeout(()=>{document.getElementById('durumcu').textContent='';}, 4000); };
 
   function paneOlustur(o) {
@@ -514,6 +576,8 @@ const PANEL_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
     k.prepend(d); while (k.children.length > 80) k.lastChild.remove();
   }
 
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
   async function denetle() {
     not('inspecting...');
     const r = await ey({ tip:'denetle' });
@@ -531,10 +595,12 @@ const PANEL_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
       if (d.minikYazi?.length) p.push(rz('#33383e','under 12px ' + d.minikYazi.length));
       if (!p.length) p.push(rz('#264d2c','clean'));
       const li = [];
-      for (const x of (d.gorunmezMetin||[])) li.push('<li class="k">INVISIBLE ' + x.oran + ':1 — "' + x.metin + '"</li>');
-      for (const x of (d.butonSorun||[]).slice(0,5)) li.push('<li class="u">BUTTON "' + x.metin + '" → ' + x.sorunlar.join(' · ') + '</li>');
-      for (const x of (d.dusukKontrast||[]).slice(0,5)) li.push('<li class="u">contrast ' + x.oran + ':1 — "' + x.metin + '"</li>');
-      parcalar.push('<h4>' + (s.etiket || s.oturum) + '</h4>' + p.join('') + (li.length ? '<ul>' + li.join('') + '</ul>' : ''));
+      // Bulgu metinleri DENETLENEN sayfanin DOM'undan gelir → escape ZORUNLU,
+      // yoksa o sayfa panelin origin'inde script calistirabilir (stored XSS).
+      for (const x of (d.gorunmezMetin||[])) li.push('<li class="k">INVISIBLE ' + esc(x.oran) + ':1 — "' + esc(x.metin) + '"</li>');
+      for (const x of (d.butonSorun||[]).slice(0,5)) li.push('<li class="u">BUTTON "' + esc(x.metin) + '" → ' + esc(x.sorunlar.join(' · ')) + '</li>');
+      for (const x of (d.dusukKontrast||[]).slice(0,5)) li.push('<li class="u">contrast ' + esc(x.oran) + ':1 — "' + esc(x.metin) + '"</li>');
+      parcalar.push('<h4>' + esc(s.etiket || s.oturum) + '</h4>' + p.join('') + (li.length ? '<ul>' + li.join('') + '</ul>' : ''));
     }
     document.getElementById('bulgu').innerHTML = parcalar.join('');
     not('done — live/inspect.json updated');
@@ -550,19 +616,26 @@ sunucu.on('error', (e) => {
   console.error('  ! server error:', e.message);
 });
 
-sunucu.listen(PORT, () => {
+// YALNIZ loopback: host argumani verilmezse Node tum arayuzlere (0.0.0.0/::) baglar
+// ve ayni agdaki herkes tarayici oturumunu surebilirdi.
+sunucu.listen(PORT, '127.0.0.1', () => {
+  try { writeFileSync(TOKEN_DOSYA, TOKEN, { mode: 0o600 }); } catch {}
   const adres = `http://localhost:${PORT}`;
   console.log(`\n  Live panel : ${adres}`);
   console.log(`  Target      : ${durum.url}  (theme: ${durum.tema})`);
   console.log(`  AI access   : MCP tools (see_screen/inspect/marks) or ${join(CANLI_DIR, 'last-mobil.jpg')}`);
   console.log(`  Antigravity/VS Code: Ctrl+Shift+P -> "Simple Browser: Show" -> ${adres}\n`);
-  if (!ACMA) exec(`start "" "${adres}"`, { shell: 'cmd.exe' });
+  if (!ACMA) tarayicidaAc(adres);
 });
 
 // Tarayici oturumlari ayri: burada patlasa bile sunucu ayakta kalir, panel hatayi gosterir.
 try {
-  if (!TEK) await oturumKur('web', arg('--desktop', 'desktop'), durum.tema);
-  await oturumKur('mobil', arg('--device', 'pixel'), durum.tema);
+  // Paralel kurulum: sirali beklemede toplam sure iki oturumun TOPLAMIYDI ve
+  // MCP'nin 30sn hazir-olma butcesini asabiliyordu.
+  await Promise.all([
+    TEK ? null : oturumKur('web', arg('--desktop', 'desktop'), durum.tema),
+    oturumKur('mobil', arg('--device', 'pixel'), durum.tema),
+  ].filter(Boolean));
 } catch (e) {
   durum.hata = String(e).split('\n')[0].slice(0, 200);
   console.error('  ! session setup failed:', durum.hata);
