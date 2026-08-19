@@ -13,9 +13,9 @@
   "homepage": "https://github.com/sololabstr/uisight#readme",
   "bugs": "https://github.com/sololabstr/uisight/issues",
   "bin": {
-    "uisight": "./src/cli.mjs",
-    "uisight-panel": "./src/server.mjs",
-    "uisight-mcp": "./src/mcp.mjs"
+    "uisight": "src/cli.mjs",
+    "uisight-panel": "src/server.mjs",
+    "uisight-mcp": "src/mcp.mjs"
   },
   "files": [
     "src/",
