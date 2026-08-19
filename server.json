@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.sololabstr/uisight",
+  "description": "AI and human watch the same live browser session — mobile + desktop side by side, with a measurement engine (contrast, touch targets, theme drift) that reports findings as text your AI agent can act on.",
+  "repository": {
+    "url": "https://github.com/sololabstr/uisight",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "uisight",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "UISIGHT_URL",
+          "description": "Initial target URL for the live sessions (default: http://localhost:3000)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "UISIGHT_PORT",
+          "description": "Panel server port (default: 5055)",
+          "isRequired": false,
+          "format": "number",
+          "isSecret": false
+        },
+        {
+          "name": "UISIGHT_LANG",
+          "description": "Set to 'tr' for Turkish tool names",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
