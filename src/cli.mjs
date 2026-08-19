@@ -436,7 +436,13 @@ async function tur(o) {
         sayfa.on('response', (r) => { if (r.status() >= 400) kayit.ag.push({ kod: r.status(), url: r.url().slice(0, 120) }); });
 
         try {
-          const yanit = await sayfa.goto(hedef, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          // One retry: edge networks intermittently stall a single request in a burst run.
+          let yanit;
+          try {
+            yanit = await sayfa.goto(hedef, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          } catch {
+            yanit = await sayfa.goto(hedef, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          }
           kayit.durum = yanit ? yanit.status() : null;
           await sayfa.waitForTimeout(o.bekle);
           kayit.baslik = await sayfa.title();
@@ -603,7 +609,7 @@ function galeriUret(kayitlar, o) {
 </article>`;
   }).join('\n');
 
-  return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>uisight — ${esc(o.url)}</title>
 ${o.izle ? `<meta http-equiv="refresh" content="${o.izle}">` : ''}

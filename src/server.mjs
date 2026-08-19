@@ -141,19 +141,26 @@ async function oturumKur(id, cihazKey, tema) {
 async function akisBaslat(o) {
   if (o.yedekZamanlayici) { clearInterval(o.yedekZamanlayici); o.yedekZamanlayici = null; }
 
+  // CDP setup can silently hang on a second context — cap every attempt at 5s
+  // and fall through to the screenshot-interval fallback (seen 2026-08-19).
+  const zamanli = (p, ms) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error(`timeout ${ms}ms`)), ms))]);
+
   if (!ZORLA_YEDEK) {
     for (let deneme = 1; deneme <= 3; deneme++) {
       try {
-        o.cdp = await o.ctx.newCDPSession(o.sayfa);
+        o.cdp = await zamanli(o.ctx.newCDPSession(o.sayfa), 5000);
         o.cdp.on('Page.screencastFrame', async ({ data, sessionId }) => {
           try { await o.cdp.send('Page.screencastFrameAck', { sessionId }); } catch {}
           kareIsle(o, data);
         });
-        await o.cdp.send('Page.startScreencast', {
+        await zamanli(o.cdp.send('Page.startScreencast', {
           format: 'jpeg', quality: 70,
           maxWidth: o.viewport.width, maxHeight: o.viewport.height, everyNthFrame: 1,
-        });
+        }), 5000);
         console.log(`  stream[${o.id}]: CDP screencast (live)`);
+        // First-frame guarantee: screencast only emits on repaint — a fully static
+        // page would leave the pane blank until something moves.
+        try { kareIsle(o, (await o.sayfa.screenshot({ type: 'jpeg', quality: 70, scale: 'css' })).toString('base64')); } catch {}
         return;
       } catch (e) {
         console.error(`  ! screencast[${o.id}] attempt ${deneme}/3 — ${String(e).split('\n')[0].slice(0, 90)}`);
@@ -367,7 +374,7 @@ const sunucu = createServer(async (req, res) => {
 });
 
 // --- Panel ---
-const PANEL_HTML = `<!doctype html><html lang="tr"><head><meta charset="utf-8">
+const PANEL_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>uisight — Live Panel</title>
 <style>
   :root { color-scheme: dark; }

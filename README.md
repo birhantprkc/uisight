@@ -6,6 +6,9 @@ uisight gives your AI coding agent (Claude Code, Cursor, Antigravity — anythin
 
 Built by a solo founder who got tired of taking phone screenshots, pasting them into chat, and typing "the button looks broken, can you see it?"
 
+![uisight live panel — desktop and mobile side by side, with per-device inspection findings](docs/assets/live-panel.png)
+*The live panel: desktop + mobile sessions of the same site, URL-synced. Inspect runs on every screen; findings come back per device. Your AI sees this exact view through MCP.*
+
 ## What makes it different
 
 | | Multi-viewport browsers (Polypane etc.) | Browser-automation MCPs (Playwright MCP etc.) | **uisight** |
@@ -35,6 +38,10 @@ npx uisight https://yourapp.com --theme both
 # live panel: mobile + desktop side by side, you browse, AI watches (and vice versa)
 npx uisight-panel http://localhost:3000
 ```
+
+The one-shot audit produces a device × theme gallery with findings per card:
+
+![uisight gallery — 4 devices × light/dark with findings per card](docs/assets/gallery.png)
 
 ### Hook it into your AI (MCP)
 
