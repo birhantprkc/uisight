@@ -1,7 +1,7 @@
 {
   "name": "uisight",
-  "version": "0.1.1",
-  "mcpName": "io.github.sololabstr/uisight",
+  "version": "0.1.2",
+  "mcpName": "io.github.yusufcemres/uisight",
   "description": "AI and human watch the same live browser session — mobile + desktop side by side, with a measurement engine (contrast, touch targets, theme drift) that reports findings as text your AI agent can act on. MCP server included.",
   "type": "module",
   "license": "MIT",
