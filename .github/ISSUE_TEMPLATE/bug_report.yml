@@ -1,0 +1,52 @@
+name: Something didn't work
+description: A crash, a wrong measurement, or a finding that shouldn't be there
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Partial reports are welcome — if you only have
+        one of the fields below, open it anyway.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      placeholder: |
+        e.g. "npx uisight https://example.com printed 'PAGE FAILED' for every device"
+        or  "it reported invisible text on a heading that is clearly readable"
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: npx uisight https://example.com --theme both
+
+  - type: textarea
+    id: finding
+    attributes:
+      label: The finding or error (paste from REPORT.md / terminal)
+      render: text
+
+  - type: input
+    id: url
+    attributes:
+      label: Page it happened on (if public)
+      placeholder: https://…
+
+  - type: input
+    id: env
+    attributes:
+      label: OS + Node version
+      placeholder: Windows 11, Node 20.11 — `node -v`
+
+  - type: checkboxes
+    id: mode
+    attributes:
+      label: How were you using it
+      options:
+        - label: One-shot CLI (`npx uisight <url>`)
+        - label: Live panel (`npx uisight-panel`)
+        - label: MCP server (Claude Code / Cursor / other)

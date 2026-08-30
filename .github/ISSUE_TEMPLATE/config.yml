@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Idea or question
+    url: https://github.com/sololabstr/uisight/issues/new
+    about: Feature ideas, "can it do X?", or anything else — a blank issue is fine.

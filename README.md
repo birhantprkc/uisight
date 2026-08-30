@@ -118,6 +118,28 @@ Works inside VS Code / Antigravity via *Simple Browser: Show* → `http://localh
 
 And the honest limit: automated checks cannot see *design* mistakes — a collided header measures fine. That's why `see_screen` exists and why the report says "eyeball the PNGs."
 
+## Something didn't work?
+
+Please open an issue — even a one-liner. This is a young project and the fastest way it improves is someone saying "I ran it on X and got Y". Screenshots of the panel or the contents of `REPORT.md` help a lot.
+
+Known rough edges, so you can tell a bug from a limitation:
+
+- **Design mistakes are invisible to the engine.** A header that collides with the logo measures perfectly fine. Use `see_screen` and look.
+- **Photo backgrounds are skipped.** Contrast over a background image can't be computed from CSS, so those elements are left alone rather than guessed at.
+- **Theme drift samples structural elements** (body, header, nav, main, footer, button, a, input, cards/panels/modals/menus) — drift that lives only in body copy won't show up in the light↔dark comparison.
+- **iPhone profiles are WebKit, not an iOS Simulator** — very close to Safari, not identical to a device.
+- **Internals are still Turkish.** Public surfaces (tools, CLI flags, reports) are English; variable names inside `src/` aren't yet. PRs welcome either way.
+
+## Development
+
+```bash
+npm install
+npx playwright install chromium
+npm test          # runs the inspection engine against fixture pages in a real browser
+```
+
+The tests are regression locks: every case in `test/inspect.test.mjs` is something the engine got wrong at least once — a false "clean" verdict, a false alarm, or a measurement that silently skipped a color format.
+
 ## Notes & limitations
 
 - iPhone profiles run on real WebKit (Safari's engine) — close to iOS, but not an iOS Simulator.

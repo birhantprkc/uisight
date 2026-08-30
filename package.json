@@ -47,5 +47,9 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "playwright": "^1.62.0",
     "zod": "^4.4.3"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "pretest": "node --check src/cli.mjs && node --check src/server.mjs && node --check src/mcp.mjs"
   }
 }
