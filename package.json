@@ -1,8 +1,8 @@
 {
   "name": "uisight",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "mcpName": "io.github.yusufcemres/uisight",
-  "description": "AI and human watch the same live browser session — mobile + desktop side by side, with a measurement engine (contrast, touch targets, theme drift) that reports findings as text your AI agent can act on. MCP server included.",
+  "description": "Your AI can already see the screen — it just can't measure it. uisight is an MCP server for web/responsive UIs: live mobile+desktop sessions, a measurement engine (contrast, touch targets, theme drift) that reports findings as text, and a panel you and your agent share.",
   "type": "module",
   "license": "MIT",
   "author": "SoloLabs (Yusuf Cemre San)",

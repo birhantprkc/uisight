@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.yusufcemres/uisight",
-  "description": "AI and human share live mobile+desktop browser sessions; measured UI findings your agent can act on",
+  "description": "Your AI sees the screen but can't measure it — measured web UI findings, shared live sessions",
   "repository": {
     "url": "https://github.com/sololabstr/uisight",
     "source": "github"
   },
-  "version": "0.1.3",
+  "version": "0.1.4",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "uisight",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "transport": {
         "type": "stdio"
       },

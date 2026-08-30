@@ -1,8 +1,18 @@
 # uisight
 
-**Your AI can't see the screen. You can't describe the bug. uisight fixes both.**
+**Your AI can already see the screen. It just can't measure it.**
 
-uisight gives your AI coding agent (Claude Code, Cursor, Antigravity — anything that speaks [MCP](https://modelcontextprotocol.io)) real eyes on your web app: live mobile + desktop sessions running side by side, a measurement engine that reports *numbers* instead of vibes, and a shared panel where you and the AI look at the exact same screen.
+Screenshots make an agent *guess*: "that heading looks a bit faint." uisight makes it **know**:
+
+```diff
+- from a screenshot:  "the heading looks a little washed out, maybe adjust the color?"
++ from uisight:       INVISIBLE TEXT 1.04:1 — span.bg-gradient-to-r "your headline"
++                     (text rgba(255,255,255,.5) / bg rgb(247,247,248))
+```
+
+One is an impression. The other is a measurement with a selector attached — the agent fixes *that* element instead of hunting for it.
+
+uisight is an [MCP](https://modelcontextprotocol.io) server for **web and responsive UIs** (Claude Code, Cursor, Antigravity, anything that speaks MCP). It runs live mobile + desktop sessions side by side, measures what it finds, and puts you and the agent in front of the exact same screen.
 
 Built by a solo founder who got tired of taking phone screenshots, pasting them into chat, and typing "the button looks broken, can you see it?"
 
@@ -11,12 +21,13 @@ Built by a solo founder who got tired of taking phone screenshots, pasting them 
 
 ## What makes it different
 
-| | Multi-viewport browsers (Polypane etc.) | Browser-automation MCPs (Playwright MCP etc.) | **uisight** |
-|---|---|---|---|
-| Human + AI share one live session | — | — | ✅ |
-| Measurement engine (reports `1.14:1`, not "looks low") | for humans | — | ✅ **as text, for AI** |
-| Device × theme matrix (mobile/desktop, light/dark) | ✅ | — | ✅ |
-| Human pins a bug → AI reads note + screenshot | — | — | ✅ |
+| | Multi-viewport browsers<br>(Polypane etc.) | Browser tools / computer use<br>(Playwright MCP, agent harnesses) | Native app toolkits<br>(Argent etc.) | **uisight** |
+|---|---|---|---|---|
+| Measures the UI (`1.14:1`, not "looks low") | ✅ for humans | — | — | ✅ **as text, for the agent** |
+| Human + agent share one live session | — | — | — | ✅ |
+| Device × theme matrix in one run | ✅ | — | — | ✅ |
+| Human pins a bug → agent reads note + frame | — | — | — | ✅ |
+| Native iOS/Android apps | — | — | ✅ | — (web only) |
 
 The measurement engine is the heart: instead of your AI burning tokens squinting at screenshots, `inspect` returns findings like
 
@@ -28,6 +39,18 @@ The measurement engine is the heart: instead of your AI burning tokens squinting
 ```
 
 Text findings are cheap, precise, and directly actionable — your AI fixes the exact selector instead of guessing.
+
+## "My agent already does this"
+
+Fair — and partly true. Computer use, browser tools and most agent harnesses can already open a page and take a screenshot. That's the part uisight doesn't try to replace. Three things are still missing:
+
+**1. Looking isn't measuring.** A vision model reading a screenshot cannot tell you a contrast ratio. It can't tell 4.6:1 (fine) from 4.3:1 (fails WCAG AA) — they look identical. It won't notice that a tap target is 41px instead of 44px, or that an element renders identically in light and dark mode because its color is hard-coded. uisight computes these from the live DOM: alpha-composited backgrounds, gradient text, `oklch()` colors and all.
+
+**2. Screenshots cost more and say less.** A mobile screenshot is roughly 1,500 tokens of pixels the model has to interpret. The equivalent `inspect` result is a few hundred tokens of facts it can act on directly. Someone put it perfectly under the launch thread: *"it burns some tokens but it manages."* This is the version that doesn't burn them.
+
+**3. Nobody's watching with you.** In the usual setup the agent looks at the page alone and reports back. Here you both watch the same live session — you see what it does as it does it, and when *you* spot something, you pin it (📌) with a note and the agent reads your note plus that exact frame. No more describing a bug in words.
+
+Scope note: uisight is for **web and responsive UIs**. For native iOS/Android app control, [Argent](https://github.com/software-mansion/argent) is excellent and does far more than we do there.
 
 ## Quickstart
 
