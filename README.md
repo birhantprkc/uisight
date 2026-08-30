@@ -1,5 +1,8 @@
 # uisight
 
+[![CI](https://github.com/sololabstr/uisight/actions/workflows/ci.yml/badge.svg)](https://github.com/sololabstr/uisight/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/uisight)](https://www.npmjs.com/package/uisight)
+
 **Your AI can already see the screen. It just can't measure it.**
 
 Screenshots make an agent *guess*: "that heading looks a bit faint." uisight makes it **know**:
