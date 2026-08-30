@@ -49,7 +49,7 @@
     "zod": "^4.4.3"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "node --test",
     "pretest": "node --check src/cli.mjs && node --check src/server.mjs && node --check src/mcp.mjs"
   }
 }
