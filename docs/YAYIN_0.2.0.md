@@ -1,4 +1,4 @@
-# 0.2.0 yayın adımları (kullanıcı terminali)
+# 0.2.1 yayın adımları (kullanıcı terminali)
 
 Kod hazır, main'de, CI yeşil, 17/17 test geçiyor. Kalan iki adım **senin terminalinden**
 koşmak zorunda: npm publish her seferinde tarayıcıda 2FA onayı ister ve headless kabukta
@@ -15,7 +15,7 @@ npm publish
 `npm publish` bir bağlantı basar ve orada bekler — tarayıcıda passkey ile onayla. Bittiğinde:
 
 ```powershell
-npm view uisight version        # 0.2.0 yazmalı
+npm view uisight version        # 0.2.1 yazmalı
 ```
 
 Sonra registry kaydı (npm'de 0.2.0 görünmeden bu adım paketi doğrulayamaz):
@@ -30,9 +30,16 @@ arasına başka iş sokma, ikisini arka arkaya koş.
 
 ## Bu sürümde ne değişti
 
-Kıran değişiklik: iç kod ve panelin HTTP yüzeyi baştan sona İngilizce. CLI bayrakları,
-9 MCP aracı ve rapor biçimi aynı — yani `npx uisight` ve MCP kullanımı etkilenmiyor.
-Panelin HTTP ucunu doğrudan çağıran varsa yeniden adlandırma tablosu `CHANGELOG.md`'de.
+**0.2.0 (kıran):** iç kod ve panelin HTTP yüzeyi baştan sona İngilizce. CLI bayrakları,
+9 MCP aracı ve rapor biçimi aynı — `npx uisight` ve MCP kullanımı etkilenmiyor. Panelin
+HTTP ucunu doğrudan çağıran varsa yeniden adlandırma tablosu `CHANGELOG.md`'de.
+
+**0.2.1 (soğuk başlangıç):** üç kusur, üçü de yalnız YENİ kullanıcıyı vuruyordu — bu
+yüzden 99 klonda tek issue gelmemiş olabilir. Tarayıcı yoksa ham Playwright yığın izi
+yerine ne koşulacağını söylüyor · `locale: 'tr-TR'` koda çakılıydı, dünyadaki herkes
+uygulamasını Türkçe denetliyordu (artık zorlanmıyor, `--locale` ile sabitlenir) · rapor
+tarihi ISO+UTC. 🔴 **Reddit/HN paylaşımı bu yayından SONRA** — yoksa gelen kişi hâlâ
+eski soğuk-başlangıç hatasını alır.
 
 ## Tarayıcı gereken, bende olmayan işler
 
