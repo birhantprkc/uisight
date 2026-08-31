@@ -1,6 +1,6 @@
 # 0.2.1 yayın adımları (kullanıcı terminali)
 
-Kod hazır, main'de, CI yeşil, 17/17 test geçiyor. Kalan iki adım **senin terminalinden**
+Kod hazır, main'de, CI yeşil, 18/18 test geçiyor. Kalan iki adım **senin terminalinden**
 koşmak zorunda: npm publish her seferinde tarayıcıda 2FA onayı ister ve headless kabukta
 onay bağlantısı `***` diye maskelenir.
 
