@@ -105,10 +105,17 @@ function inspectionText(results) {
     for (const x of d.invisibleText || []) out.push(`  INVISIBLE TEXT ${x.ratio}:1 — ${x.sel} "${x.text}" (text ${x.color} / bg ${x.bg})`);
     for (const x of d.lowContrast || []) out.push(`  low contrast ${x.ratio}:1 (threshold ${x.threshold}) ${x.fontSize} — "${x.text}"`);
     for (const x of d.buttonIssues || []) out.push(`  BUTTON ${x.sel} "${x.text}" → ${x.issues.join(' · ')}`);
+    for (const x of d.coveredControls || []) out.push(`  COVERED ${x.sel} "${x.text}" ${x.size} — ${x.percent}% under ${x.coveredBy} "${x.coveredByText}"`);
+    for (const x of d.coveredByFixed || []) out.push(`  UNDER FIXED BAR ${x.sel} "${x.text}" — ${x.percent}% behind ${x.bar}`);
+    for (const x of d.clippedText || []) out.push(`  CLIPPED ${x.sel} "${x.text}" — ${x.hiddenPx}px hidden (${x.axis})`);
     for (const x of (d.smallTargets || []).slice(0, 8)) out.push(`  touch target below 44px ${x.size} — "${x.text}"`);
     if (d.tinyText?.length) out.push(`  text below 12px (${d.tinyText.length}): ` + d.tinyText.map((m) => `${m.fontSize} "${m.text}"`).join(' · '));
     if (d.imagesWithoutAlt) out.push(`  images without alt: ${d.imagesWithoutAlt}`);
-    const clean = !d.horizontalOverflow && !d.invisibleText?.length && !d.lowContrast?.length && !d.buttonIssues?.length && !d.smallTargets?.length && !d.tinyText?.length;
+    // A "clean" claim must cover EVERY finding type. When a new check is added and
+    // this list is not, the tool prints "clean" directly under its own findings.
+    const clean = !d.horizontalOverflow && !d.invisibleText?.length && !d.lowContrast?.length
+      && !d.buttonIssues?.length && !d.smallTargets?.length && !d.tinyText?.length
+      && !d.coveredControls?.length && !d.clippedText?.length && !d.coveredByFixed?.length;
     if (clean) out.push('  automated checks clean (use see_screen for design issues the numbers cannot catch)');
   }
   return out.join('\n');

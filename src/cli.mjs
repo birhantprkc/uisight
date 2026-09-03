@@ -128,6 +128,7 @@ export const INSPECTION_SCRIPT = (settings) => {
   const isMobile = !settings || settings.mobile !== false;
   const result = {
     horizontalOverflow: null, smallTargets: [], tinyText: [], imagesWithoutAlt: 0,
+    coveredControls: [], clippedText: [], coveredByFixed: [],
     invisibleText: [], lowContrast: [], buttonIssues: [], themeSignature: [],
   };
 
@@ -373,8 +374,92 @@ export const INSPECTION_SCRIPT = (settings) => {
     if (!el.getAttribute('alt')) result.imagesWithoutAlt++;
   });
 
+  // 5) A control that something else is sitting on top of.
+  //
+  // This is the failure a person spots instantly and no contrast or size rule can
+  // see: a floating action button parked on the corner of the primary CTA, a
+  // toast covering "Save". An earlier version of this check only sampled the
+  // element's CENTRE and was blind to exactly that — a FAB covering the right end
+  // of a wide button leaves the centre clear. So sample a grid, edge to edge.
+  document.querySelectorAll('button, a[href], [role="button"], input[type="submit"]').forEach((el) => {
+    if (!isVisible(el)) return;
+    const r = el.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return;
+
+    const cols = Math.min(9, Math.max(5, Math.round(r.width / 60)));
+    const covers = new Map();
+    let sampled = 0, blocked = 0;
+    for (let i = 0; i < cols; i++) {
+      for (let j = 0; j < 3; j++) {
+        const x = r.left + r.width * (0.03 + (0.94 / (cols - 1)) * i);
+        const y = r.top + r.height * (0.15 + 0.35 * j);
+        if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+        sampled++;
+        const top = document.elementFromPoint(x, y);
+        if (!top || el.contains(top) || top.contains(el)) continue;
+        blocked++;
+        const k = describe(top);
+        if (!covers.has(k)) covers.set(k, { el: top, n: 0 });
+        covers.get(k).n++;
+      }
+    }
+    if (!sampled || !blocked) return;
+    const pct = Math.round((blocked / sampled) * 100);
+    if (pct < 10) return; // a shadow or border grazing the edge is not a cover
+    const [name, hit] = [...covers.entries()].sort((a, b) => b[1].n - a[1].n)[0];
+    result.coveredControls.push({
+      sel: describe(el), text: shortLabel(el) || '(no text)',
+      size: `${Math.round(r.width)}x${Math.round(r.height)}`,
+      coveredBy: name, coveredByText: shortLabel(hit.el) || '(no text)', percent: pct,
+    });
+  });
+
+  // 6) Text that does not fit its own box and is cut off.
+  document.querySelectorAll('h1, h2, h3, p, span, div, button, a, label').forEach((el) => {
+    if (!isVisible(el) || el.children.length) return;
+    const t = (el.innerText || '').trim();
+    if (t.length < 3) return;
+    const st = getComputedStyle(el);
+    if (st.overflow === 'visible' && st.overflowY === 'visible') return;
+    const cutV = el.scrollHeight - el.clientHeight > 3;
+    const cutH = el.scrollWidth - el.clientWidth > 3;
+    if (!cutV && !cutH) return;
+    if (st.textOverflow === 'ellipsis' && cutH && !cutV) return;   // deliberate …
+    if (/auto|scroll/.test(st.overflowY) && cutV) return;          // a scroll area
+    result.clippedText.push({
+      sel: describe(el), text: t.slice(0, 40), axis: cutV ? 'vertical' : 'horizontal',
+      hiddenPx: cutV ? el.scrollHeight - el.clientHeight : el.scrollWidth - el.clientWidth,
+    });
+  });
+
+  // 7) Content sitting under a fixed/sticky bar. Headers that scroll over their
+  // own page content read as "half the sentence is missing" to the user.
+  const bars = [...document.querySelectorAll('*')].filter((el) => {
+    if (!isVisible(el)) return false;
+    const st = getComputedStyle(el);
+    return (st.position === 'fixed' || st.position === 'sticky') && parseFloat(st.zIndex || 0) >= 0;
+  });
+  for (const bar of bars) {
+    const br = bar.getBoundingClientRect();
+    if (br.height < 20 || br.height > innerHeight * 0.5) continue;
+    document.querySelectorAll('h1, h2, h3, p, label, button, a').forEach((el) => {
+      if (!isVisible(el) || bar.contains(el) || el.contains(bar)) return;
+      const r = el.getBoundingClientRect();
+      const over = Math.max(0, Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top));
+      if (over > r.height * 0.4 && r.width > 40) {
+        result.coveredByFixed.push({
+          sel: describe(el), text: shortLabel(el) || (el.innerText || '').trim().slice(0, 40),
+          bar: describe(bar), percent: Math.round((over / r.height) * 100),
+        });
+      }
+    });
+  }
+
   result.smallTargets = result.smallTargets.slice(0, 12);
   result.tinyText = result.tinyText.slice(0, 8);
+  result.coveredControls = result.coveredControls.slice(0, 10);
+  result.clippedText = result.clippedText.slice(0, 10);
+  result.coveredByFixed = result.coveredByFixed.slice(0, 10);
   return result;
 };
 
@@ -536,6 +621,21 @@ async function tur(o) {
       lines.push(`- 🟠 **Button issues** (${d.buttonIssues.length}):`);
       for (const s of d.buttonIssues) lines.push(`  - \`${s.sel}\` "${s.text}" → ${s.issues.join(' · ')}`);
     }
+    if (d.coveredControls?.length) {
+      findingCount++;
+      lines.push(`- 🔴 **Covered controls** (something sits on top of them, ${d.coveredControls.length}):`);
+      for (const s of d.coveredControls) lines.push(`  - \`${s.sel}\` "${s.text}" ${s.size} — ${s.percent}% covered by \`${s.coveredBy}\` "${s.coveredByText}"`);
+    }
+    if (d.coveredByFixed?.length) {
+      findingCount++;
+      lines.push(`- 🟠 **Hidden under a fixed bar** (${d.coveredByFixed.length}):`);
+      for (const s of d.coveredByFixed) lines.push(`  - \`${s.sel}\` "${s.text}" — ${s.percent}% under \`${s.bar}\``);
+    }
+    if (d.clippedText?.length) {
+      findingCount++;
+      lines.push(`- 🟡 **Text cut off by its own box** (${d.clippedText.length}):`);
+      for (const s of d.clippedText) lines.push(`  - \`${s.sel}\` "${s.text}" — ${s.hiddenPx}px hidden (${s.axis})`);
+    }
     if (d.imagesWithoutAlt) lines.push(`- ⚪ images without alt: ${d.imagesWithoutAlt}`);
     if (k.console.length) { findingCount++; lines.push(`- 🔴 **Console/JS errors** (${k.console.length}):`); for (const c of k.console.slice(0, 5)) lines.push(`  - ${c.type}: ${c.message}`); }
     if (k.network.length) { findingCount++; lines.push(`- 🔴 **Failed requests** (${k.network.length}):`); for (const a of k.network.slice(0, 5)) lines.push(`  - ${a.status} ${a.url}`); }
@@ -543,7 +643,8 @@ async function tur(o) {
     // button issues were left out, the report printed "clean" right under its own findings.
     const anyFinding = d.horizontalOverflow || d.smallTargets?.length || d.tinyText?.length
       || d.invisibleText?.length || d.lowContrast?.length || d.buttonIssues?.length
-      || k.console.length || k.network.length;
+      || k.console.length || k.network.length
+      || d.coveredControls?.length || d.clippedText?.length || d.coveredByFixed?.length;
     if (!anyFinding) lines.push('- ✅ automated checks clean (still eyeball the image)');
     lines.push('');
   }

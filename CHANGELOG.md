@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 — 2026-09-04
+
+Three new checks, all of them things a person spots in a screenshot in one second
+and no amount of contrast or size measurement can see.
+
+- **`coveredControls`** — a control with something sitting on top of it: a floating
+  action button parked on the corner of the primary CTA, a toast over "Save". The
+  first version of this check sampled only the element's centre and was blind to
+  exactly that case; it now samples a grid edge to edge, and the test that proves
+  it is the real bug, not a hypothetical.
+- **`coveredByFixed`** — text and buttons hidden behind a fixed or sticky bar. A
+  header that scrolls over its own content reads as "half the sentence is missing".
+- **`clippedText`** — text cut off by its own box. A deliberate `text-overflow:
+  ellipsis` is not reported; a scroll container is not reported.
+
+Six tests cover them, three for the defect and three for the false alarm — the
+false-alarm half matters more, because a check people stop trusting is worse than
+no check.
+
+The "automated checks clean" line in both the report and the MCP summary now
+accounts for these three. It is the same trap as before: a new check that the
+clean-claim does not know about makes the tool print "clean" under its own findings.
+
 ## 0.2.1 — 2026-08-31
 
 Three cold-start defects, all of them things a first-time user would hit and none of

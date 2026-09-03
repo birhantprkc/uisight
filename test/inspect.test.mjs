@@ -161,3 +161,70 @@ test('device profiles expose a usable viewport and touch flag', () => {
     if (p.mobile === false) assert.notEqual(settings.hasTouch, true, `${name}: desktop must not claim touch`);
   }
 });
+
+/**
+ * Overlap, clipping, and fixed-bar coverage.
+ *
+ * These three came from four screenshots a person took by hand. The engine
+ * measured those same pages and called them clean, because contrast and size
+ * rules cannot see one element sitting on top of another.
+ *
+ * The first version of the overlap check sampled only the element's centre and
+ * missed the very case that prompted it — a floating button on the corner of a
+ * wide CTA. That is why the grid case below exists: it is the bug, not a
+ * hypothetical.
+ */
+test('a floating button covering the corner of a CTA is caught, not just the centre', async () => {
+  const d = await inspect(body(`
+    <div style="position:relative;height:100vh">
+      <button style="position:absolute;bottom:40px;left:20px;right:20px;height:64px">Devam Et</button>
+      <button aria-label="chat" style="position:absolute;bottom:28px;right:24px;width:64px;height:64px;border-radius:50%;z-index:9">C</button>
+    </div>`));
+  const hit = (d.coveredControls || []).find((x) => x.text.includes('Devam'));
+  assert.ok(hit, 'the covered CTA must be reported');
+  assert.ok(hit.percent >= 10, `coverage should be measured, got ${hit?.percent}`);
+});
+
+test('buttons that merely sit next to each other are not reported as covered', async () => {
+  const d = await inspect(body(`
+    <div style="padding:20px">
+      <button style="display:block;width:200px;height:48px;margin-bottom:16px">Kaydet</button>
+      <button style="display:block;width:200px;height:48px">Iptal</button>
+    </div>`));
+  assert.equal((d.coveredControls || []).length, 0, 'adjacent buttons must not be flagged');
+});
+
+test('text cut off by its own box is reported', async () => {
+  const d = await inspect(body(`<div style="width:160px;height:24px;overflow:hidden">Bu metin kutusuna kesinlikle sigmiyor ve alt satira tasip kirpiliyor</div>`));
+  const hit = (d.clippedText || []).find((x) => x.text.includes('sigmiyor'));
+  assert.ok(hit, 'clipped text must be reported');
+  assert.equal(hit.axis, 'vertical');
+  assert.ok(hit.hiddenPx > 3, 'it should say how much is hidden');
+});
+
+test('a deliberate ellipsis is not treated as a bug', async () => {
+  const d = await inspect(body(`<div style="width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Cok uzun bir baslik burada kesilecek</div>`));
+  assert.equal((d.clippedText || []).length, 0, 'text-overflow:ellipsis is a choice, not a defect');
+});
+
+test('a sticky header covering page text is reported', async () => {
+  const d = await inspect(body(`
+    <header style="position:fixed;top:0;left:0;right:0;height:90px;background:#fff;z-index:5">Kokart</header>
+    <main style="padding-top:20px"><p style="margin:0 16px">ekle, genel rehberseniz bos birakabilirsiniz)</p></main>`));
+  const hit = (d.coveredByFixed || []).find((x) => x.text.includes('rehberseniz'));
+  assert.ok(hit, 'text under the fixed header must be reported');
+  assert.ok(hit.percent >= 40, `coverage percent should be meaningful, got ${hit?.percent}`);
+});
+
+test('a normal page with a header and spaced content stays clean on all three', async () => {
+  const d = await inspect(body(`
+    <header style="position:fixed;top:0;left:0;right:0;height:60px;background:#fff;z-index:5">Baslik</header>
+    <main style="padding-top:80px">
+      <h1>Hos geldiniz</h1>
+      <p>Normal bir paragraf, hicbir sey ustune binmiyor.</p>
+      <button style="width:200px;height:48px">Devam</button>
+    </main>`));
+  assert.equal((d.coveredControls || []).length, 0, 'no false overlap');
+  assert.equal((d.clippedText || []).length, 0, 'no false clipping');
+  assert.equal((d.coveredByFixed || []).length, 0, 'no false fixed-bar coverage');
+});
