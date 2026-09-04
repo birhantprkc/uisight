@@ -4,27 +4,39 @@
 
 **A flag that would have been a placebo, and the real cause underneath it.**
 
-A field report asked for  after parallel contexts locked a local
+A field report asked for `--concurrency 1` after parallel contexts locked a local
 server twice. Reading the code first: there is no parallelism in the CLI at all —
-device, theme and path loops are all sequential, no  anywhere. The
-flag would have changed nothing and everyone would have believed it helped.
+device, theme and path loops are all sequential, no `Promise.all` anywhere. The
+flag would have changed nothing, and everyone would have believed it helped.
 
 Measured instead: **a single page load fires 20 requests at once.** That is the
-browser own connection pool, not this tool. A backend with a small pool — Prisma
-, for instance — queues all twenty on one connection and
-stalls.  caps them: measured 20 to 4 concurrent, at a cost of
-3.8s to 4.0s.
+browser's own connection pool, not this tool. A backend with a small pool — Prisma
+`connection_limit=1`, for instance — queues all twenty on one connection and
+stalls. `--max-requests <n>` caps them: measured 20 down to 4 concurrent, at a
+cost of 3.8s to 4.0s.
 
 **A regression test that can actually fail.** The listener bug now has a
 behavioural test: a real server whose three pages each log exactly one error,
-expecting . A structural test — does the loop call  — can
+expecting `[1, 1, 1]`. A structural test — does the loop call `page.off` — can
 pass while the behaviour stays broken. Verified by putting the bug back: it fails
-with , and goes green when the fix
+with `got [3,2,1] — listeners are accumulating`, and goes green when the fix
 returns. A regression test that cannot fail is worth nothing.
 
-Writing it taught its own lesson:  blocks the test process event
+Writing it taught its own lesson: `execFileSync` blocks the test process's event
 loop, and the server being measured lives in that process, so the CLI waited
 forever for a reply that could not be sent. Cost: one 180-second timeout.
+
+## 0.20.1 — 2026-09-04
+
+The new text-behind-a-control check produced a finding the first time it ran on a
+real page: a cookie banner sitting over a pricing card. The screenshot settled it
+— pressing "only essential" reveals everything. The text is one tap away, not
+lost.
+
+The distinction is deliberate. That same banner covering a *control* is a real
+bug, because the user cannot reach the control; a banner covering the login
+button was one of the four real defects found this week. So `coveredControls`
+keeps no such exemption. This one is only about text.
 
 ## 0.20.0 — 2026-09-04
 
