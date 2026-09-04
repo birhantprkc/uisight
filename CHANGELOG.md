@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2 — 2026-09-04
+
+**Truncated lists no longer hide the count.** Detail lists are capped so a bad
+page does not flood the report — but printing the capped length as if it were the
+total made the tool lie about how bad a page is. A site with 33 contrast failures
+reported "12"; you fixed twelve, re-ran, saw "12" again, and nothing looked like it
+had changed. That happened to the author, on a real page, while verifying a fix.
+
+Every capped list now reports `shown / total` (`12 / 33`). The cap stays; the count
+is honest.
+
 ## 0.3.1 — 2026-09-04
 
 The three checks from 0.3.0, run against 14 live sites, produced 36 findings.

@@ -116,6 +116,18 @@ export function missingBrowser(e, engine) {
   );
 }
 
+/**
+ * Detay listeleri kapali (token maliyeti) ama SAYI asla gizlenmez.
+ * "12" ile "12 / 34" arasindaki fark, kullanicinin ilerledigini gorup
+ * gormemesidir: 12 bulguyu duzeltip tekrar "12" gormek, hicbir sey
+ * degismemis gibi okunur.
+ */
+const kac = (d, key) => {
+  const toplam = d.totals?.[key] ?? (d[key] || []).length;
+  const gosterilen = (d[key] || []).length;
+  return toplam > gosterilen ? `${gosterilen} / ${toplam}` : String(toplam);
+};
+
 export function deviceSettings(pwName) {
   const d = devices[pwName];
   if (d) return d;
@@ -322,9 +334,19 @@ export const INSPECTION_SCRIPT = (settings) => {
     result.themeSignature.push({ sel: describe(el), text: shortLabel(el).slice(0, 24), color: st.color, bg: st.backgroundColor, border: st.borderTopColor });
   }
 
-  result.invisibleText = result.invisibleText.slice(0, 12);
-  result.lowContrast = result.lowContrast.slice(0, 12);
-  result.buttonIssues = result.buttonIssues.slice(0, 12);
+  // Lists are capped so a bad page does not flood the report (and the agent's
+  // context). But capping the list while ALSO printing its length hides how bad
+  // the page is: a site with 34 contrast failures reported "12", you fixed all
+  // 12, re-ran, and saw "12" again — nothing looked like it had changed. So keep
+  // the cap on the detail, and always carry the true count separately.
+  result.totals = {};
+  const capAt = (key, n) => {
+    result.totals[key] = result[key].length;
+    result[key] = result[key].slice(0, n);
+  };
+  capAt('invisibleText', 12);
+  capAt('lowContrast', 12);
+  capAt('buttonIssues', 12);
 
   // 1) Horizontal overflow — the most common mobile bug there is.
   const docWidth = document.documentElement.scrollWidth;
@@ -492,11 +514,11 @@ export const INSPECTION_SCRIPT = (settings) => {
     });
   }
 
-  result.smallTargets = result.smallTargets.slice(0, 12);
-  result.tinyText = result.tinyText.slice(0, 8);
-  result.coveredControls = result.coveredControls.slice(0, 10);
-  result.clippedText = result.clippedText.slice(0, 10);
-  result.coveredByFixed = result.coveredByFixed.slice(0, 10);
+  capAt('smallTargets', 12);
+  capAt('tinyText', 8);
+  capAt('coveredControls', 10);
+  capAt('clippedText', 10);
+  capAt('coveredByFixed', 10);
   return result;
 };
 
@@ -636,7 +658,7 @@ async function tur(o) {
     }
     if (d.smallTargets?.length) {
       findingCount++;
-      lines.push(`- 🟡 **touch targets below 44px** (${d.smallTargets.length}):`);
+      lines.push(`- 🟡 **touch targets below 44px** (${kac(d, 'smallTargets')}):`);
       for (const s of d.smallTargets) lines.push(`  - \`${s.label}\` ${s.size} — "${s.text}"`);
     }
     if (d.tinyText?.length) {
@@ -645,32 +667,32 @@ async function tur(o) {
     }
     if (d.invisibleText?.length) {
       findingCount++;
-      lines.push(`- 🔴 **INVISIBLE TEXT** (contrast <1.6:1 — practically unreadable, ${d.invisibleText.length}):`);
+      lines.push(`- 🔴 **INVISIBLE TEXT** (contrast <1.6:1 — practically unreadable, ${kac(d, 'invisibleText')}):`);
       for (const s of d.invisibleText) lines.push(`  - \`${s.sel}\` ${s.ratio}:1 — text ${s.color} / bg ${s.bg} — "${s.text}"`);
     }
     if (d.lowContrast?.length) {
       findingCount++;
-      lines.push(`- 🟡 **Low contrast** (below WCAG AA, ${d.lowContrast.length}):`);
+      lines.push(`- 🟡 **Low contrast** (below WCAG AA, ${kac(d, 'lowContrast')}):`);
       for (const s of d.lowContrast) lines.push(`  - \`${s.sel}\` ${s.ratio}:1 (threshold ${s.threshold}) ${s.fontSize} — "${s.text}"`);
     }
     if (d.buttonIssues?.length) {
       findingCount++;
-      lines.push(`- 🟠 **Button issues** (${d.buttonIssues.length}):`);
+      lines.push(`- 🟠 **Button issues** (${kac(d, 'buttonIssues')}):`);
       for (const s of d.buttonIssues) lines.push(`  - \`${s.sel}\` "${s.text}" → ${s.issues.join(' · ')}`);
     }
     if (d.coveredControls?.length) {
       findingCount++;
-      lines.push(`- 🔴 **Covered controls** (something sits on top of them, ${d.coveredControls.length}):`);
+      lines.push(`- 🔴 **Covered controls** (something sits on top of them, ${kac(d, 'coveredControls')}):`);
       for (const s of d.coveredControls) lines.push(`  - \`${s.sel}\` "${s.text}" ${s.size} — ${s.percent}% covered by \`${s.coveredBy}\` "${s.coveredByText}"`);
     }
     if (d.coveredByFixed?.length) {
       findingCount++;
-      lines.push(`- 🟠 **Hidden under a fixed bar** (${d.coveredByFixed.length}):`);
+      lines.push(`- 🟠 **Hidden under a fixed bar** (${kac(d, 'coveredByFixed')}):`);
       for (const s of d.coveredByFixed) lines.push(`  - \`${s.sel}\` "${s.text}" — ${s.percent}% under \`${s.bar}\``);
     }
     if (d.clippedText?.length) {
       findingCount++;
-      lines.push(`- 🟡 **Text cut off by its own box** (${d.clippedText.length}):`);
+      lines.push(`- 🟡 **Text cut off by its own box** (${kac(d, 'clippedText')}):`);
       for (const s of d.clippedText) lines.push(`  - \`${s.sel}\` "${s.text}" — ${s.hiddenPx}px hidden (${s.axis})`);
     }
     if (d.imagesWithoutAlt) lines.push(`- ⚪ images without alt: ${d.imagesWithoutAlt}`);
@@ -751,12 +773,12 @@ function buildGallery(records, o) {
     const badges = [];
     if (k.error) badges.push(['crit', 'PAGE FAILED']);
     if (d.horizontalOverflow) badges.push(['crit', 'overflow']);
-    if (d.invisibleText?.length) badges.push(['crit', `invisible text ${d.invisibleText.length}`]);
+    if (d.invisibleText?.length) badges.push(['crit', `invisible text ${kac(d, 'invisibleText')}`]);
     if (k.console?.length) badges.push(['crit', `JS errors ${k.console.length}`]);
     if (k.network?.length) badges.push(['crit', `failed requests ${k.network.length}`]);
-    if (d.buttonIssues?.length) badges.push(['warn', `buttons ${d.buttonIssues.length}`]);
+    if (d.buttonIssues?.length) badges.push(['warn', `buttons ${kac(d, 'buttonIssues')}`]);
     if (d.lowContrast?.length) badges.push(['warn', `contrast ${d.lowContrast.length}`]);
-    if (d.smallTargets?.length) badges.push(['warn', `under 44px ${d.smallTargets.length}`]);
+    if (d.smallTargets?.length) badges.push(['warn', `under 44px ${kac(d, 'smallTargets')}`]);
     if (d.tinyText?.length) badges.push(['info', `under 12px ${d.tinyText.length}`]);
     if (!badges.length) badges.push(['ok', 'automated checks clean']);
 
