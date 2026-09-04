@@ -28,6 +28,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkPort } from './login.mjs';
 import { checkForUpdate, agentUpdateNotice, currentVersion, latestVersion } from './update-check.mjs';
+import { fingerprint, fingerprints } from './findings.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 /**
@@ -190,6 +191,21 @@ const examples = (g, pick, len = 28) => {
   return g.length > 2 ? `${s} +${g.length - 2}` : s;
 };
 
+
+
+/**
+ * Son olcum, oturum+adres basina. Yalniz bellekte: kalicilastirmak, sunucu
+ * yeniden basladiginda yanlis bir "degismedi" uretme riski getirir.
+ *
+ * Sebebi maliyet: duzelt-olc dongusunde ikinci olcum, degismeyen her seyi
+ * yeniden gonderiyor ve o metin sonraki HER turda tekrar gidiyor. Olculdu:
+ * alti turluk bir dongude 8.673 token yerine 3.378 (%61 az).
+ *
+ * Ve aslinda daha iyi bilgi: ikinci olcumde ajanin sordugu soru "sayfada ne var"
+ * degil, "duzeltmem tuttu mu".
+ */
+const lastSeen = new Map();
+
 function inspectionText(results) {
   const out = [];
   for (const s of results) {
@@ -301,12 +317,54 @@ tool('see_screen', 'ekrani_gor',
 tool('inspect', 'denetle',
   'Runs color/contrast/theme/button/overflow checks on the open page; returns MEASURED findings as text (cheaper and more precise than images). Without session, inspects ALL sessions.',
   'Acik sayfada color/contrast/theme/buton/tasma denetimi kosar; OLCULMUS bulgulari text olarak dondurur. session verilmezse TUM sessions denetlenir.',
-  { session: SESSION },
-  async ({ session }) => {
+  { session: SESSION,
+    full: z.boolean().optional().describe('List everything. Without it, a second inspection of the same page reports only what CHANGED — which is what you want after a fix, and much cheaper.') },
+  async ({ session, full }) => {
     await ensureEngine();
     const r = await action({ type: 'inspect', ...(session ? { session: sid(session) } : {}) });
     if (!r.ok) return { content: [text(`inspection failed: ${r.message}`)], isError: true };
-    return { content: [text(inspectionText(r.results))] };
+
+    // Ayni adres ikinci kez olculuyorsa, degismeyeni tekrar gondermek hem pahali
+    // hem konu disi. `full` ile tam liste her zaman istenebilir.
+    const parcalar = [];
+    for (const s of r.results) {
+      const anahtar = `${s.session}|${s.url}`;
+      const simdi = fingerprints(s.inspection);
+      const once = lastSeen.get(anahtar);
+      lastSeen.set(anahtar, simdi);
+
+      if (full || !once) { parcalar.push(inspectionText([s])); continue; }
+
+      const kapanan = [...once].filter((k) => !simdi.has(k));
+      const yeni = [...simdi].filter((k) => !once.has(k));
+      const ayni = simdi.size - yeni.length;
+
+      if (!kapanan.length && !yeni.length) {
+        parcalar.push(`\n[${s.session} · ${s.label} · ${s.theme}] ${s.url}\n`
+          + `  no change since the last inspection (${ayni} finding${ayni === 1 ? '' : 's'} still open). `
+          + `Pass full:true for the list.`);
+        continue;
+      }
+
+      const satirlar = [`\n[${s.session} · ${s.label} · ${s.theme}] ${s.url}  — since the last inspection:`];
+      if (kapanan.length) satirlar.push(`  CLOSED ${kapanan.length}: ${kapanan.map((k) => k.split('|')[0]).join(', ')}`);
+      if (yeni.length) {
+        satirlar.push(`  NEW ${yeni.length}:`);
+        // Yeni olanlari TAM goster: onlar zaten kullanicinin bilmedigi kisim.
+        const yeniKume = new Set(yeni);
+        const suz = (tur, liste) => (liste || []).filter((x) => yeniKume.has(fingerprint(tur, x)));
+        const tek = {};
+        for (const [tur, liste] of Object.entries(s.inspection || {})) {
+          if (!Array.isArray(liste)) continue;
+          const k = suz(tur, liste);
+          if (k.length) tek[tur] = k;
+        }
+        satirlar.push(inspectionText([{ ...s, inspection: tek }]).split('\n').slice(2).join('\n'));
+      }
+      if (ayni) satirlar.push(`  ${ayni} unchanged (full:true to list)`);
+      parcalar.push(satirlar.join('\n'));
+    }
+    return { content: [text(parcalar.join('\n'))] };
   });
 
 tool('goto', 'git',

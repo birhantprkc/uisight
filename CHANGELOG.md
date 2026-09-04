@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.15.0 — 2026-09-04
+
+The second measurement of a page now reports only what changed.
+
+The fix-measure loop is the main way this tool gets used, and the second
+inspection was re-sending everything that had not moved — text that is then
+re-sent again on every later turn of the conversation. Measured on a real page:
+422 tokens down to 44 when nothing changed. Over six rounds of fixing, 8,673
+tokens becomes 3,378.
+
+The saving is the smaller half of it. After a fix the question is not "what is
+on this page" but "did my fix work", and a diff answers that one directly:
+CLOSED, NEW, and a count of what is still open. `full: true` brings back the
+whole list whenever it is wanted.
+
+`fingerprint`/`fingerprints` live in their own module because `mcp.mjs` is an
+entry point — importing it starts the server and blocks, so a helper left in
+there cannot be tested, and an untested helper is one that breaks quietly. The
+risk here is a fingerprint that is too specific: include something that wiggles
+between runs and every finding looks new every time, so the diff becomes a full
+report that also claims things were fixed and re-broken. Seven tests hold it.
+
 ## 0.14.0 — 2026-09-04
 
 Both of these came from an agent auditing a different application, which is
