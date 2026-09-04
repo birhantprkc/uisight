@@ -34,7 +34,7 @@ npx -y -p uisight uisight-panel http://localhost:3000   # canlı panel: sen gez,
 npx -y -p uisight uisight-audit                  # giriş yapıp her rolü gezer
 ```
 
-MCP kaydı (Claude Code): `claude mcp add --scope user uisight -- npx -y -p uisight uisight-mcp`
+MCP kaydı (Claude Code): `claude mcp add --scope user uisight -- npx -y -p uisight@latest uisight-mcp`
 
 Türkçe araç adları için: `UISIGHT_LANG=tr` (`ekrani_gor`, `denetle`, `git`, `tikla`, `yaz`, `kaydir`, `cihaz_degistir`, `durum`, `isaretler`).
 

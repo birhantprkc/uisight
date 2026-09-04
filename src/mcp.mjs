@@ -10,7 +10,7 @@
  * Starts the panel server (server.mjs) automatically if it is not running.
  *
  * Register (Claude Code):
- *   claude mcp add --scope user uisight -- npx -y -p uisight uisight-mcp
+ *   claude mcp add --scope user uisight -- npx -y -p uisight@latest uisight-mcp
  *
  * Env: UISIGHT_PORT (default 5055) · UISIGHT_URL (initial target, default http://localhost:3000)
  *      UISIGHT_LANG=tr → tool names/descriptions in Turkish (ekrani_gor, denetle, ...)
@@ -38,7 +38,7 @@ if (process.argv.includes('--help') || process.argv.includes('-h')) {
 
 Not usually run by hand. Register it instead:
 
-  claude mcp add --scope user uisight -- npx -y -p uisight uisight-mcp
+  claude mcp add --scope user uisight -- npx -y -p uisight@latest uisight-mcp
 
 or, for other hosts:
 

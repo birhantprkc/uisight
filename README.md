@@ -78,13 +78,13 @@ The one-shot audit produces a device × theme gallery with findings per card:
 
 ```bash
 # Claude Code
-claude mcp add --scope user uisight -- npx -y -p uisight uisight-mcp
+claude mcp add --scope user uisight -- npx -y -p uisight@latest uisight-mcp
 ```
 
 For Cursor / Antigravity / other MCP hosts, add to your MCP config:
 
 ```json
-{ "mcpServers": { "uisight": { "command": "npx", "args": ["-y", "-p", "uisight", "uisight-mcp"] } } }
+{ "mcpServers": { "uisight": { "command": "npx", "args": ["-y", "-p", "uisight@latest", "uisight-mcp"] } } }
 ```
 
 Then just tell your agent: *"look at my app with uisight"*. The panel server starts automatically when needed.

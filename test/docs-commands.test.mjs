@@ -47,7 +47,10 @@ test('the Smithery listing starts the server the same way the docs do', () => {
   const y = readFileSync(join(root, 'smithery.yaml'), 'utf8');
   const args = /args:\s*\[([^\]]+)\]/.exec(y)?.[1] || '';
   const parcalar = args.split(',').map((s) => s.trim().replace(/^'|'$/g, ''));
-  const p = parcalar[parcalar.indexOf('-p') + 1];
+  // A tag is allowed and wanted here: npx caches, so a long-lived start command
+  // written without one keeps running whatever uisight was current the first
+  // time it ran.
+  const p = (parcalar[parcalar.indexOf('-p') + 1] || '').replace(/@[^@/]*$/, '');
   assert.equal(p, PAKET, `Smithery would run "npx ${parcalar.join(' ')}" — that package does not exist`);
 });
 

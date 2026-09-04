@@ -22,7 +22,7 @@ startCommand:
   commandFunction: |-
     (config) => ({
       command: 'npx',
-      args: ['-y', '-p', 'uisight', 'uisight-mcp'],
+      args: ['-y', '-p', 'uisight@latest', 'uisight-mcp'],
       env: {
         ...(config.uisightUrl ? { UISIGHT_URL: config.uisightUrl } : {}),
         ...(config.uisightPort ? { UISIGHT_PORT: String(config.uisightPort) } : {}),
