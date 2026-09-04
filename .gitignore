@@ -9,3 +9,7 @@ package-lock.json
 extension/*.vsix
 .tools/
 extension/*.vsix
+
+# Başka projelerin ajanları burada geçici betik üretiyor (uisight'ın motorunu
+# doğrudan çağırmak için). Kalıcı olanı docs/agent-notes/ altına alınır.
+*.tmp.mjs
