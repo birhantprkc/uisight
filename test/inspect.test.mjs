@@ -322,6 +322,21 @@ test('flow content the user can simply scroll clear of is NOT reported', async (
   assert.equal(hit, undefined, 'more page below means the user can scroll it clear');
 });
 
+test('a bottom nav over a control the user can scroll clear of is not a finding', async () => {
+  // Measured on a production app: a "Modules" row read as 100% covered by the
+  // bottom nav while the page had 1,715px left to scroll — the row rises above
+  // the bar as soon as you move. The gate existed in the fixed-bar check and was
+  // missing here; the field report named both, and only one got it.
+  const d = await inspect(body(`
+    <main style="height:200vh;padding-bottom:96px">
+      <a href="/x" style="display:block;margin-top:calc(100vh - 30px);width:340px">Modüller ›</a>
+    </main>
+    <nav style="position:fixed;bottom:0;left:0;right:0;height:56px;background:#fff;z-index:40">
+      <a href="/a">Ana</a></nav>`));
+  const hit = (d.coveredControls || []).find((x) => x.text.includes('Modüller'));
+  assert.equal(hit, undefined, 'more page below means the user can scroll it clear');
+});
+
 test('a development overlay covering a real control is not a finding', async () => {
   // Next.js puts a dev-tools button in a <nextjs-portal>. It covered a rating
   // link and produced a finding on two pages. It does not exist in production.

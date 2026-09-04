@@ -174,13 +174,26 @@ for (const r of all) {
   for (const x of r.underBarList) md.push(`- UNDER A FIXED BAR: ${x}`);
   for (const x of r.sameLookList) md.push(`- NO PRIMARY ACTION: ${x}`);
 }
-const davranis = all.filter((r) => (r.offline || []).length || (r.back || []).length);
+// Davranis ROL basina bir kez olculuyor ama her sayfa satirina kopyalaniyor.
+// Satirlar uzerinden donmek tek bulguyu sayfa sayisi kadar cogaltiyordu: alti
+// sayfalik bir kosumda tek bir cevrimdisi bulgusu bes kez yazildi. Bugun aracin
+// KENDI sayilarini sisiren bir hatayi duzelttik; ayni sey rapor yazicisinda
+// duruyormus. Rol basina TEK satir.
+const gorulen = new Set();
+const davranis = [];
+for (const r of all) {
+  for (const x of r.offline || []) {
+    const k = `${r.role}|OFFLINE|${x}`;
+    if (!gorulen.has(k)) { gorulen.add(k); davranis.push(`- ${r.role} · OFFLINE: ${x}`); }
+  }
+  for (const x of r.back || []) {
+    const k = `${r.role}|BACK|${x}`;
+    if (!gorulen.has(k)) { gorulen.add(k); davranis.push(`- ${r.role} · BACK BUTTON: ${x}`); }
+  }
+}
 if (davranis.length) {
   md.push('', '## Behaviour (measured once per role, not per page)');
-  for (const r of davranis) {
-    for (const x of r.offline || []) md.push(`- ${r.role} · OFFLINE: ${x}`);
-    for (const x of r.back || []) md.push(`- ${r.role} · BACK BUTTON: ${x}`);
-  }
+  md.push(...davranis);
 }
 
 md.push('', '> Automated checks cannot see design mistakes — look at the panel too.');

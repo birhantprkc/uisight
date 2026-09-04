@@ -671,6 +671,30 @@ export const INSPECTION_SCRIPT = (settings) => {
     if (pct < 10) return; // a shadow or border grazing the edge is not a cover
     const [name, hit] = [...covers.entries()].sort((a, b) => b[1].n - a[1].n)[0];
 
+    // Alt cubugun ORTTUGU sey, kullanicinin kaydirip gecebildigi bir sey olabilir.
+    // Bu kapi coveredByFixed'e konulmustu ama BURAYA konulmamisti — saha raporu
+    // ikisini birden soyluyordu, biri kapatildi. Sonuc: prod bir uygulamada
+    // "Moduller" satiri alt gezinmenin altinda %100 ortulu raporlandi, oysa sayfa
+    // 1715px daha kayiyor ve satir kaydirinca cikiyor.
+    //
+    // Ayni istisna: hedefin KENDISI sabitse kaydirmak onu kurtarmaz.
+    {
+      // Sabit olan sey ORTEN OGENIN KENDISI degil, ATASI olabilir: alt gezinmede
+      // orten "Ana" baglantisidir ve o statiktir; `fixed` olan onu tasiyan <nav>.
+      // Yalniz ogenin kendisine bakmak kapiyi sessizce etkisiz birakiyordu —
+      // sentetik test geciyordu, gercek sayfa gecmiyordu.
+      let sabitAta = null;
+      for (let n = hit.el; n && n !== document.body; n = n.parentElement) {
+        const ns = getComputedStyle(n);
+        if (ns.position === 'fixed' || ns.position === 'sticky') { sabitAta = n; break; }
+      }
+      const cr = sabitAta ? sabitAta.getBoundingClientRect() : hit.el.getBoundingClientRect();
+      const altCubuk = !!sabitAta && cr.bottom >= innerHeight - 4;
+      const dahaKayiyor = (window.scrollY + innerHeight) < (document.documentElement.scrollHeight - 4);
+      const hedefSabit = st2.position === 'fixed' || st2.position === 'sticky';
+      if (altCubuk && dahaKayiyor && !hedefSabit) return;
+    }
+
     // A modal covering what is behind it is the POINT of a modal, not a defect.
     // Without this, every open dialog reported every control on the page beneath
     // it — a check that fires on correct behaviour is a check people learn to

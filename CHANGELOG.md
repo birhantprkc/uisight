@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.22.0 — 2026-09-05
+
+Running the audit behind a real login found three things, and two were mine.
+
+**`demoButton` works in production.** The route added yesterday for apps that let
+you in with one click was never tried on a real app. It signs in and the audit
+walks six pages behind the wall, no credentials involved.
+
+**"No button matching" meant "already signed in".** When a session is already
+authenticated most apps redirect `/login` to the app, so the sign-in never
+reaches the page it is looking for — and then blames the button. Every route now
+notices it arrived somewhere else and says so, which is the correct outcome
+rather than a failure.
+
+**The scroll gate was in one check and not its sibling.** A field report named
+both `coveredControls` and `coveredByFixed`; only the second one got the fix.
+So a production app reported a "Modules" row as 100% covered by the bottom nav
+while the page had 1,715px left to scroll. Fixed — and the first attempt failed
+because the fixed element is the `<nav>`, not the link inside it that
+`elementFromPoint` returns: checking the coverer's own position left the gate
+silently inert, passing its synthetic test while the real page still reported.
+
+**The report multiplied one finding into five.** Behaviour checks run once per
+role but the report looped over page rows, so a single offline finding appeared
+once per page. The same inflation bug fixed in the engine yesterday was sitting
+in the report writer.
+
 ## 0.21.1 — 2026-09-05
 
 Re-running the audit found that an earlier fix had exempted the wrong side.

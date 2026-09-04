@@ -116,6 +116,9 @@ export async function signIn(page, recipe, log = () => {}) {
   if (recipe.demoButton) {
     await page.goto(origin + (recipe.loginUrl || '/login'), { waitUntil: 'domcontentloaded', timeout: 25000 });
     await page.waitForTimeout(1500);
+    if (!loginSayfasindaMi(page, recipe.loginUrl || '/login')) {
+      return { ok: true, email: '(already signed in)', route: 'already-signed-in', message: page.url() };
+    }
     await dismissConsent(page);
     const target = recipe.demoButton.startsWith('/') || recipe.demoButton.includes('[')
       ? page.locator(recipe.demoButton).first()
@@ -159,6 +162,10 @@ export async function signIn(page, recipe, log = () => {}) {
 
     const consent = await dismissConsent(page);
     if (consent) log(`consent banner dismissed: "${consent}"`);
+
+    if (!loginSayfasindaMi(page, recipe.loginUrl || '/login')) {
+      return { ok: true, email, route: 'already-signed-in', message: page.url() };
+    }
 
     const emailField = await page.$('input[type=email], input[name*=mail i], input[placeholder*="@"]');
     if (!emailField) return { ok: false, step: 'email-field', message: 'no email field found' };
@@ -207,6 +214,20 @@ export async function signIn(page, recipe, log = () => {}) {
   } finally {
     page.off('response', listener);
   }
+}
+
+/**
+ * Giris sayfasina gercekten varildi mi?
+ *
+ * Zaten girisli bir oturumda cogu uygulama /login'i /app'e yonlendirir. Bunu
+ * bilmeyen kod "dugme bulunamadi" ya da "e-posta alani yok" der ve sorunu
+ * olmayan bir yeri isaret eder. Sahada tam olarak bu yasandi: demo dugmesi
+ * aranan sayfaya hic gidilememisti, hata ise dugmeyi sucladi.
+ */
+function loginSayfasindaMi(page, loginUrl) {
+  const p = new URL(page.url()).pathname.replace(/\/$/, '');
+  const hedef = new URL(loginUrl, page.url()).pathname.replace(/\/$/, '');
+  return p === hedef || /login|signin|giris/i.test(p);
 }
 
 async function submit(page, log = () => {}) {
