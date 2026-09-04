@@ -147,6 +147,7 @@ if (!login.ok) {
   process.exit(1);
 }
 console.log(`signed in (${login.result.route}) -> ${login.result.message}`);
+if (login.result.matched) console.log(`  account entry: ${login.result.matched}${login.result.label ? ' (' + login.result.label + ')' : ''}`);
 
 const s = await state();
 const roles = ROLES.length ? ROLES : (s.accounts?.length ? s.accounts : [null]);

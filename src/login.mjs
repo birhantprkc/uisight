@@ -65,8 +65,13 @@ export function recipeFor(url, accountName = null) {
   const cfg = read();
   if (!cfg) return null;
   const u = new URL(url);
+  // Hangi girdinin esleştiği SOYLENMELI. `localhost:3000` tum projelerde ortak:
+  // bir projeye gecici sabit `code` koyan biri, ayni portu kullanan baska bir
+  // projenin devCode yolunu sessizce bozar (recipe.code devCode'un onune gecer).
+  const eslesen = cfg[u.host] ? u.host : (cfg[u.hostname] ? u.hostname : (cfg.default ? 'default' : null));
   let r = cfg[u.host] || cfg[u.hostname] || cfg.default || null;
   if (!r) return null;
+  r = { ...r, _matched: eslesen, _label: r.project || r.label || null };
   if (cfg.default && r !== cfg.default) r = { ...cfg.default, ...r };
 
   // Several identities per host: what a guide sees is not what an agency sees.
@@ -139,6 +144,10 @@ export async function signIn(page, recipe, log = () => {}) {
       // cause was a rate limit.
       if (res.status() >= 400 || b?.error) {
         apiError = `HTTP ${res.status()} · ${b?.error?.message || b?.message || b?.error?.code || 'unknown'}`;
+        // Ne zaman acilacagini soylemek, denetimi terk etmekten iyidir.
+        const bekle = res.headers()['retry-after'];
+        if (bekle) apiError += ` · retry after ${bekle}s`;
+        else if (res.status() === 429) apiError += ' · rate limited by the app; wait and retry';
       }
     } catch { /* not JSON */ }
   };

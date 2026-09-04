@@ -512,6 +512,34 @@ async function applyAction(g) {
       return { ok: true, results };
     }
 
+    // Olculen seyin KIMLIGI. Bayat bir dev sunucusu diskteki degisiklige ragmen
+    // eski CSS'i servis edebiliyor — ve dosya adi bile degismiyor, yani ad
+    // karsilastiran hicbir kontrol yakalayamaz. Bir kullanici yarim saatini
+    // ONCEDEN duzeltilmis bir hatayi duzeltmeye harcadi.
+    //
+    // Bu dogrudan fark moduna dokunuyor: sunucu bayatsa "hicbir sey degismedi"
+    // DOGRU GORUNEN YANLIS cevaptir.
+    case 'build-id': {
+      const o = targetSession(g);
+      if (!o) return { ok: false, message: 'no such session' };
+      const kimlik = await o.page.evaluate(() => {
+        const al = (s) => document.querySelector(s)?.getAttribute('content') || null;
+        let next = null;
+        try { next = window.__NEXT_DATA__?.buildId || null; } catch { /* yok */ }
+        // Stil sayfalarinin adresleri: hash'liyse degisiklik burada gorunur.
+        const css = [...document.styleSheets]
+          .map((s) => s.href).filter(Boolean).map((h) => h.split('/').pop()).sort().join(',');
+        return {
+          buildId: next,
+          version: al('meta[name="version"]') || al('meta[name="build"]'),
+          css: css.slice(0, 300),
+          scripts: [...document.scripts].map((s) => s.src).filter(Boolean)
+            .map((h) => h.split('/').pop()).sort().join(',').slice(0, 300),
+        };
+      }).catch(() => null);
+      return { ok: true, url: o.page.url(), identity: kimlik };
+    }
+
     case 'keyboard-audit': {
       // Two different failures, and one model cannot see both. Both verified on a
       // real device:
@@ -586,6 +614,18 @@ async function applyAction(g) {
               const wide = r.width >= innerWidth * 0.4;
               const submits = el.type === 'submit' || /submit/i.test(el.getAttribute('type') || '');
               if (!wide && !submits) continue;
+
+              // 🔴 `interactive-widget=resizes-content` klavye acilinca DUZEN gorus
+              // alanini da kucultur; yapiskan cubuk klavyenin USTUNE cikar ve sorun
+              // biter. Band modeli bunu bilmedigi icin, calisan bir duzeltmeden
+              // SONRA ayni bulguyu ayni sayiyla veriyordu — bir kullanici bu yuzden
+              // dogru duzeltmesini neredeyse geri aliyordu.
+              //
+              // Araci "duzeltmen tutmadi" dedirten hata, hic bulmayan hatadan kotudur.
+              const meta = document.querySelector('meta[name="viewport"]');
+              const icerikKuculuyor = /interactive-widget\s*=\s*resizes-content/i
+                .test(meta ? meta.getAttribute('content') || '' : '');
+              if (icerikKuculuyor) continue;   // cubuk klavyenin ustune cikar
 
               const band = innerHeight * (1 - share);
               const shown = Math.max(0, Math.min(r.bottom, band) - Math.max(r.top, 0));

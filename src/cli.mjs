@@ -239,6 +239,25 @@ export const INSPECTION_SCRIPT = (settings) => {
   // Next.js'in dev dugmesi bir sayfada "ortulmus kontrol" olarak raporlandi;
   // sahada kullanicinin gormedigi bir seyi bulgu saymak, aracin guvenilirligini
   // ucuza harciyor.
+  /**
+   * Dekoratif mi? Ekranda GORUNEN ama kullanicinin dokunamadigi sey bulgu degildir.
+   *
+   * Bir karsilama sayfasindaki telefon maketinin icinde sahte bir alt menu gercek
+   * <button> olarak duruyordu: her kosuda, her cihazda, her temada "44px alti"
+   * sayildi — sayfa basina 4-8 bulgu, tamami resim.
+   *
+   * `pointer-events:none` zinciri tek basina yetmez; maket bunlari tasimiyordu.
+   * O yuzden ayni kapi uygulamaya verilecek dogru ogudun de kendisi: dekoratif
+   * bir maket `aria-hidden` ya da `inert` olmali.
+   */
+  const dekoratif = (el) => {
+    if (el.closest?.('[aria-hidden="true"], [inert]')) return true;
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      if (getComputedStyle(n).pointerEvents === 'none') return true;
+    }
+    return false;
+  };
+
   const gelistirmeKatmani = (el) => !!el.closest?.(
     'nextjs-portal, #__next-build-watcher, [data-nextjs-toast], vite-error-overlay, #vite-error-overlay, [data-vite-dev-id]',
   );
@@ -524,6 +543,7 @@ export const INSPECTION_SCRIPT = (settings) => {
     const dar = !metinVar && r.width < 43.5;
     const kisa = r.height < 43.5;
     if (dar || kisa) {
+      if (dekoratif(el)) return;
       result.smallTargets.push({
         label: el.tagName.toLowerCase(),
         text: (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 40),
@@ -552,7 +572,7 @@ export const INSPECTION_SCRIPT = (settings) => {
   // element's CENTRE and was blind to exactly that — a FAB covering the right end
   // of a wide button leaves the centre clear. So sample a grid, edge to edge.
   document.querySelectorAll('button, a[href], [role="button"], input[type="submit"]').forEach((el) => {
-    if (!isVisible(el) || gelistirmeKatmani(el)) return;
+    if (!isVisible(el) || gelistirmeKatmani(el) || dekoratif(el)) return;
 
     // An inline link that wraps onto two lines has a bounding BOX spanning both
     // lines AND the gap between them — a rectangle covering text that belongs to
@@ -594,13 +614,37 @@ export const INSPECTION_SCRIPT = (settings) => {
     let sampled = 0, blocked = 0;
     for (let i = 0; i < cols; i++) {
       for (let j = 0; j < 3; j++) {
-        const x = r.left + r.width * (0.03 + (0.94 / (cols - 1)) * i);
+        // Pay YUZDE olarak degil, en az 2 CSS pikseli olarak tabanlanir: %3, 26px'lik
+        // bir ogede kenardan 0.78px demek ve alt-piksel yerlesimde komsu doner.
+        const ic = Math.min(Math.max(2, r.width * 0.03), r.width / 2 - 0.5);
+        const x = r.left + ic + ((r.width - 2 * ic) / (cols - 1)) * i;
         const y = r.top + r.height * (0.15 + 0.35 * j);
         if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
         if (!icerde(x, y)) continue;
         sampled++;
         const top = document.elementFromPoint(x, y);
         if (!top || el.contains(top) || top.contains(el)) continue;
+
+        // Akistaki kardes ORTEMEZ — boyama sirasi geregi.
+        //
+        // Olculdu: yan yana dort 26px dugmede, ornekleme sutunlari genisligin
+        // %3-%97'sinde oldugu icin en yakin ornek paylasilan sinira 0.78px
+        // dusuyordu; alt-piksel yerlesimde `elementFromPoint` komsuyu donduruyor.
+        // 15 ornegin 3'u yanlis isabet (%20) ve dorduncusu de "%20 ortulmus"
+        // raporlandi. Dordu de elle tiklandi, calisiyorlardi.
+        //
+        // Sayiyla degil KURALLA cozulur: konumlandirilmamis, yigin baglami
+        // yaratmayan bir kardes, hedefin ustunde boyanamaz.
+        if (top.parentElement === el.parentElement) {
+          const ts = getComputedStyle(top);
+          const duzKardes = ts.position === 'static'
+            && (ts.zIndex === 'auto' || ts.zIndex === '')
+            && ts.transform === 'none'
+            && ts.filter === 'none'
+            && parseFloat(ts.opacity) >= 1;
+          if (duzKardes) continue;
+        }
+
         blocked++;
         const k = describe(top);
         if (!covers.has(k)) covers.set(k, { el: top, n: 0 });

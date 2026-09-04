@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.19.0 — 2026-09-04
+
+A fourth field report, which independently confirmed the listener bug with a
+cleaner signature — a page logging exactly one warning came back as `5, 4, 3, 2,
+1` — and then found something worse.
+
+**The keyboard check told a working fix that it had failed.** The right way to
+stop a sticky bar disappearing behind the keyboard is
+`interactive-widget=resizes-content` in the viewport meta: the layout viewport
+shrinks and the bar rides above the keyboard. Applied, verified by hand at 100%
+visible — and the tool returned the same finding with the same number, because it
+measures against a band and never read the meta. The person nearly reverted a
+correct fix. A tool that says "your fix did not work" is worse than one that
+finds nothing.
+
+**A stale dev server lies, and nothing catches it by name.** `next dev` served
+old CSS after the file changed on disk, so an already-fixed contrast measured as
+broken and half an hour went into fixing it twice. The chunk filename was
+identical in both states. Inspections now carry a build identity, and when a
+second inspection finds no change on a byte-identical page it says so: if you
+changed something, the server is stale. That matters most for the diff mode from
+0.15.0, where "nothing changed" is a plausible-looking wrong answer.
+
+**A flow sibling cannot cover anything.** Four 26px buttons in a row: sampling
+columns at 3% of the width landed 0.78px from the shared edge and sub-pixel
+layout made `elementFromPoint` return the neighbour — 3 of 15 samples, reported
+as "20% covered". All four were tapped by hand and worked. Solved by rule rather
+than by tuning: a static, unstacked, untransformed sibling cannot be painted on
+top. The sampling inset is also floored at 2 CSS pixels.
+
+**A decorative mockup is not an interface.** A phone mockup on a landing page
+contained a fake bottom nav built from real buttons, counted as sub-44px targets
+on every device, every theme, every run — 4 to 8 findings per page, all of them
+a picture. Targets under `aria-hidden`, `inert`, or a `pointer-events: none`
+chain are now skipped, which is also the right advice for the mockup.
+
+Smaller: dev overlays are excluded everywhere rather than in two checks;
+`accounts.json` reports which entry matched, because `localhost:3000` is shared
+by every project and a fixed code left there silently breaks another project's
+sign-in; a rate-limited login now says when to try again.
+
 ## 0.18.0 — 2026-09-04
 
 A third field report, and the worst bug of the three days: **this tool was

@@ -205,6 +205,8 @@ const examples = (g, pick, len = 28) => {
  * degil, "duzeltmem tuttu mu".
  */
 const lastSeen = new Map();
+/** Son olculen yapinin imzasi — bayat sunucuyu ayirt etmek icin. */
+const lastBuild = new Map();
 
 function inspectionText(results) {
   const out = [];
@@ -333,6 +335,14 @@ tool('inspect', 'denetle',
       const once = lastSeen.get(anahtar);
       lastSeen.set(anahtar, simdi);
 
+      // Yapinin kimligi HER olcumde alinir; yalniz karsilastirma aninda almak
+      // ilk tekrari karsilastirilacak seyden yoksun birakir.
+      const kimlik = await action({ type: 'build-id', session: s.session }).catch(() => null);
+      const imza = kimlik?.identity ? JSON.stringify(kimlik.identity) : null;
+      const oncekiImza = lastBuild.get(anahtar);
+      if (imza) lastBuild.set(anahtar, imza);
+      const ayniYapi = !!(imza && oncekiImza && imza === oncekiImza);
+
       if (full || !once) { parcalar.push(inspectionText([s])); continue; }
 
       const kapanan = [...once].filter((k) => !simdi.has(k));
@@ -340,9 +350,18 @@ tool('inspect', 'denetle',
       const ayni = simdi.size - yeni.length;
 
       if (!kapanan.length && !yeni.length) {
+        // "Hicbir sey degismedi" iki sekilde dogru olabilir: gercekten degismedi,
+        // ya da AYNI YAPIYI olcuyoruz. Ikincisi bir kullanicinin yarim saatini
+        // yedi — bayat bir dev sunucusu diskteki degisiklige ragmen eski CSS'i
+        // servis etti ve dosya adi bile ayni kaldi.
         parcalar.push(`\n[${s.session} · ${s.label} · ${s.theme}] ${s.url}\n`
           + `  no change since the last inspection (${ayni} finding${ayni === 1 ? '' : 's'} still open). `
-          + `Pass full:true for the list.`);
+          + `Pass full:true for the list.`
+          + (ayniYapi
+            ? `\n  NOTE: the page is byte-identical to last time (same build, same asset names). `
+              + `If you changed something, the server is serving a stale build — restart it before `
+              + `concluding the fix did not work.`
+            : ''));
         continue;
       }
 
