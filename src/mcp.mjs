@@ -176,12 +176,17 @@ function tool(enName, trName, enDesc, trDesc, schema, handler) {
 }
 
 tool('see_screen', 'ekrani_gor',
-  'Screenshot of the live session (~460 tokens). Prefer inspect for measurable problems.',
-  'Canli oturumun ekran goruntusu (~460 token). Olculebilir sorunlar icin inspect.',
-  { session: SESSION, full: z.boolean().optional().describe('Full page: ~10x the cost, capped and reported') },
-  async ({ session, full }) => {
+  'Screenshot of the live session (~260 tokens at the default scale). Prefer inspect for measurable problems.',
+  'Canli oturumun ekran goruntusu (varsayilan olcekte ~260 token). Olculebilir sorunlar icin inspect.',
+  { session: SESSION,
+    full: z.boolean().optional().describe('Full page: costlier, capped and reported'),
+    scale: z.number().optional().describe('0.25-1, default 0.75. Cost falls with the SQUARE: 0.5 is a quarter the price and still readable. Use 1 only when small print matters.') },
+  async ({ session, full, scale }) => {
     await ensureEngine();
-    const r = await req(`/frame?session=${sid(session)}${full ? '&full=1' : ''}`, {}, 30000);
+    const q = [`session=${sid(session)}`];
+    if (full) q.push('full=1');
+    if (scale) q.push(`scale=${scale}`);
+    const r = await req(`/frame?${q.join('&')}`, {}, 30000);
     if (!r.ok) return { content: [text(`could not capture frame: HTTP ${r.status}`)], isError: true };
     const bytes = Buffer.from(await r.arrayBuffer());
     const b64 = bytes.toString('base64');

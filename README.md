@@ -231,7 +231,7 @@ with an image priced the way Claude prices one (width x height / 750):
 | `uisight <url>` then read `REPORT.md` | **~800, once** |
 | `uisight-audit` then read `REPORT.md` | **~150-800, once** |
 | MCP `inspect` | ~570 per call |
-| MCP `see_screen` | ~460 per call |
+| MCP `see_screen` | ~260 per call (0.75 scale, the default) |
 | MCP `see_screen` with `full` | ~2,000 per call (capped; was ~5,800 uncapped) |
 | tool definitions | ~1,065 **per request** |
 
@@ -249,6 +249,14 @@ same page costs ~570 tokens measured versus ~460 seen, and the measurement says
 `4.38:1 (threshold 4.5)` where the picture only lets the model guess. A full-page
 capture is now capped (`UISIGHT_MAX_IMAGE_TOKENS`, default 2000) and the response
 tells you what it cost and what was left out, instead of quietly spending.
+
+**A screenshot does not need to be full size.** Measured on a real page: the
+same mobile screen is 461 tokens at 1.0, 259 at 0.75 and 115 at 0.5 — and cost
+falls with the *square* of the scale. At 0.75 it is indistinguishable, small
+print included; at 0.5 the layout and every meaningful label still read and only
+the smallest legal text goes soft. So 0.75 is the default and `scale` is a
+parameter on `see_screen`; pass `1` when small print is the thing you are
+looking at, `0.5` for a cheap sweep.
 
 **Tool definitions are a fixed tax on every request.** Nine tools cost ~1,065
 tokens whether you call them or not:

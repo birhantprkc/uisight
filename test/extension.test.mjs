@@ -136,3 +136,40 @@ test('the audit summary counts every finding type, or its totals lie', () => {
   const missing = FINDING_TYPES().filter((k) => !summary.includes(`d.${k}`));
   assert.deepEqual(missing, [], `not counted in the audit total: ${missing.join(', ')}`);
 });
+
+/**
+ * Frame scale. The numbers here are measured, not assumed: the same mobile
+ * screen is 461 tokens at full size, 259 at 0.75 (indistinguishable, small print
+ * included) and 115 at 0.5 (layout and every meaningful label still read).
+ *
+ * Cost falls with the SQUARE of the scale, which is why the default moved: 44%
+ * off for nothing. These tests pin the contract so a later edit cannot quietly
+ * put the default back to 1 — or push it so low the image stops being worth
+ * sending at all.
+ */
+test('the default frame scale saves real money and stays in a sane range', () => {
+  const m = server.match(/DEFAULT_FRAME_SCALE\s*=\s*Math\.min\(1,\s*Math\.max\(([\d.]+),[^)]*\)\s*\|\|\s*([\d.]+)\)/);
+  assert.ok(m, 'the default scale must be a clamped constant');
+  const floor = Number(m[1]);
+  const def = Number(m[2]);
+  assert.ok(def < 1, 'a default of 1 spends 44% more for no visible gain');
+  assert.ok(def >= 0.5, `below 0.5 the small print goes, got ${def}`);
+  assert.ok(floor >= 0.2, 'the floor must stop a scale that produces an unusable image');
+});
+
+test('scale is clamped, so a bad value cannot produce a useless or giant image', () => {
+  assert.match(server, /Math\.min\(1,\s*Math\.max\(0\.25/, 'requests are clamped to 0.25-1');
+});
+
+test('the scaled capture falls back instead of failing when CDP is absent', () => {
+  const fn = server.slice(server.indexOf('async function captureScaled'));
+  assert.match(fn.slice(0, 600), /if \(!o\.cdp\) return null/, 'no CDP means fall back, not throw');
+  assert.match(fn.slice(0, 900), /catch \{\s*\n?\s*return null/, 'a capture error must fall back too');
+});
+
+test('see_screen exposes scale, and says what it buys', () => {
+  const mcp = readFileSync(join(root, 'src', 'mcp.mjs'), 'utf8');
+  const block = mcp.slice(mcp.indexOf("tool('see_screen'"), mcp.indexOf("tool('inspect'"));
+  assert.match(block, /scale: z\.number\(\)/, 'the agent needs the lever');
+  assert.match(block, /quarter the price/, 'and needs to know what it costs');
+});

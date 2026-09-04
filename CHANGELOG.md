@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.12.0 — 2026-09-04
+
+Frames are 44% cheaper, and the reason is measurement rather than a hunch.
+
+The same mobile screen, captured four ways and then actually looked at: 461
+tokens at full size, 259 at 0.75, 166 at 0.6, 115 at 0.5. At 0.75 it is
+indistinguishable — small print included. At 0.5 the layout and every meaningful
+label still read; only the smallest legal text goes soft. Cost falls with the
+*square* of the scale, so half the size is a quarter the price.
+
+0.75 is now the default. `scale` is a parameter on `see_screen` (and
+`UISIGHT_FRAME_SCALE` on the server): pass `1` when small print is the thing you
+are looking at, `0.5` for a cheap sweep.
+
+Scaling happens in CDP's own capture, so there is no image library to install and
+no JavaScript run inside the page being inspected. Without CDP it falls back to
+full size rather than failing.
+
+This also corrects a comment in the code that claimed downscaling "would make the
+text unreadable, which defeats the point of looking." That was never measured. It
+is wrong.
+
 ## 0.11.1 — 2026-09-04
 
 Documentation, and one claim in it that was not true.

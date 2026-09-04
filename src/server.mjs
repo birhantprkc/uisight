@@ -56,6 +56,33 @@ checkForUpdate();            // arka planda, beklenmez
 // Tam sayfa goruntusunun tavani (Claude'da ~ genislik*yukseklik/750 token).
 // Ortamdan buyutulebilir: UISIGHT_MAX_IMAGE_TOKENS=4000
 const MAX_IMAGE_TOKENS = Number(process.env.UISIGHT_MAX_IMAGE_TOKENS || 2000);
+// Kareler varsayilan olarak 0.75'te uretilir: olculdu, ayirt edilemiyor, %44 ucuz.
+// UISIGHT_FRAME_SCALE=1 tam ayrinti, 0.5 dortte bir maliyet.
+const DEFAULT_FRAME_SCALE = Math.min(1, Math.max(0.25, Number(process.env.UISIGHT_FRAME_SCALE) || 0.75));
+
+/**
+ * Olcekli yakalama, CDP'nin kendi olcegiyle — ek bagimlilik yok, sayfada JS
+ * calistirmak yok. CDP yoksa null doner ve cagiran tam boyuta duser.
+ */
+async function captureScaled(o, clip, scale) {
+  if (!o.cdp) return null;
+  try {
+    // withTimeout baska bir kapsamda; burada kendi yarisini kur.
+    const r = await Promise.race([
+      o.cdp.send('Page.captureScreenshot', {
+        format: 'jpeg',
+        quality: 85,
+        captureBeyondViewport: true,
+        clip: { ...clip, scale },
+      }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('capture timeout')), 20000)),
+    ]);
+    return r && r.data ? Buffer.from(r.data, 'base64') : null;
+  } catch {
+    return null;   // eski Chromium, kopmus oturum — sessizce tam boyuta dus
+  }
+}
+
 const NO_OPEN = argv.includes('--no-open');
 const SINGLE = argv.includes('--single');
 const FORCE_FALLBACK = (process.env.UISIGHT_FALLBACK || process.env.MOBILQA_YEDEK) === '1';
@@ -743,39 +770,55 @@ const server = createServer(async (req, res) => {
   if (u.pathname === '/frame') {
     const o = sessions.get(u.searchParams.get('session')) || targetSession({});
     if (!o) { res.writeHead(404); return res.end('no such session'); }
+
+    // An image costs the model about width*height/750 tokens, and it is not paid
+    // once: it stays in the conversation and is re-sent on every later turn.
+    //
+    // Measured on a real page, rather than assumed: at 0.75 the same screen is
+    // indistinguishable — small print included — for 44% less. At 0.5 the layout
+    // and every meaningful label still read; only the smallest legal text goes
+    // soft, for a quarter of the price. So 0.75 is the default, and detail is
+    // one parameter away.
+    const scale = Math.min(1, Math.max(0.25, Number(u.searchParams.get('scale')) || DEFAULT_FRAME_SCALE));
+    const full = u.searchParams.get('full') === '1';
+
     try {
-      let buf;
+      let buf = null;
       let clipped = null;
-      if (u.searchParams.get('full') === '1') {
-        // An image costs the model roughly width*height/750 tokens, and a long
-        // page has no ceiling: a 10,500px article is ~5,800 tokens, a 20,000px
-        // one is ~11,000 — paid again on every later turn of the conversation.
-        //
-        // Downscaling would keep the whole page but make the text unreadable,
-        // which defeats the point of looking. So the height is capped and the
-        // response SAYS what was left out, instead of silently spending or
-        // silently truncating.
-        const size = await o.page.evaluate(() => ({
+      let size = null;
+
+      if (full) {
+        // A long page has no ceiling: 10,500px is ~5,800 tokens at full size and
+        // a 20,000px one is ~11,000. Scaling stretches the budget rather than
+        // replacing it — the height is still capped, and the response says what
+        // was left out instead of silently spending or silently truncating.
+        size = await o.page.evaluate(() => ({
           w: Math.ceil(document.documentElement.scrollWidth),
           h: Math.ceil(document.documentElement.scrollHeight),
         }));
-        const maxH = Math.max(1, Math.floor((MAX_IMAGE_TOKENS * 750) / Math.max(1, size.w)));
-        if (size.h > maxH) {
-          buf = await o.page.screenshot({
-            // clip ALONE stays inside the viewport (verified: it returned 839px
-            // when 3640 was asked for). fullPage is what lets it reach down.
-            type: 'jpeg', quality: 85, scale: 'css', fullPage: true,
-            clip: { x: 0, y: 0, width: size.w, height: maxH },
-          });
-          clipped = `${maxH}/${size.h}`;
-        } else {
-          buf = await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css', fullPage: true });
-        }
+        const maxH = Math.max(
+          1,
+          Math.floor((MAX_IMAGE_TOKENS * 750) / Math.max(1, size.w * scale * scale)),
+        );
+        const h = Math.min(size.h, maxH);
+        if (h < size.h) clipped = `${h}/${size.h}`;
+        buf = await captureScaled(o, { x: 0, y: 0, width: size.w, height: h }, scale);
       } else {
-        buf = o.lastFrame ? Buffer.from(o.lastFrame, 'base64')
-                          : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' });
+        size = o.page.viewportSize() || { w: 0, h: 0 };
+        const w = size.width || size.w;
+        const hh = size.height || size.h;
+        if (scale < 1 && w && hh) {
+          buf = await captureScaled(o, { x: 0, y: 0, width: w, height: hh }, scale);
+        }
+        // Scale 1, or no CDP: the cached screencast frame is already the cheapest
+        // path — no extra capture at all.
+        if (!buf) {
+          buf = o.lastFrame ? Buffer.from(o.lastFrame, 'base64')
+                            : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' });
+        }
       }
-      const head = { 'content-type': 'image/jpeg', 'x-session': o.id };
+
+      const head = { 'content-type': 'image/jpeg', 'x-session': o.id, 'x-scale': String(scale) };
       if (clipped) head['x-clipped'] = clipped;
       res.writeHead(200, head);
       return res.end(buf);
