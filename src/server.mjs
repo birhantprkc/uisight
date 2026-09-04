@@ -664,6 +664,31 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
     background:#1e1f22e6; border:1px solid #4c6fd6; border-radius:6px; padding:6px 8px; font-size:12px; display:none; }
   .tel.picking .pickHint { display:block; }
   .yan { flex:1; min-width:230px; display:flex; flex-direction:column; gap:10px; }
+
+  /* Dar mod (?narrow=1) — IDE kenar cubugu icin.
+     Kenar cubugu ~300px; iki ekran yan yana sigmaz, telefon cercevesi tek basina
+     412px. Masaustu oturumu gizlenir ve telefon kaba sigacak sekilde kuculur:
+     okunmayan iki sutun yerine okunan tek sutun. */
+  body.narrow .gov { flex-direction:column; padding:8px; gap:8px; }
+  body.narrow .ekranlar { flex-direction:column; max-width:100%; }
+  body.narrow .tel[data-session="web"] { display:none; }
+  /* Kart genisligini goruntu belirler ve goruntu genisligini kart belirler:
+     dairesel. Acik bir tavan olmadan kart dogal boyutuna acilir ve kenar
+     cubugundan tasar — bu yuzden kart da goruntu de kaba zorlanir. */
+  body.narrow .tel { padding:4px; border-radius:10px; width:100%; max-width:100%; box-sizing:border-box; }
+  body.narrow .tel img { width:100%; max-width:100%; max-height:none; height:auto; }
+  body.narrow .yan { min-width:0; max-width:100%; }
+  body.narrow .ust { padding:6px 8px; gap:6px; }
+  /* Baslik dar alanda uc satira boluniyor ve igneyi kenardan kirpiyordu:
+     etiket tek satirda kisalir, secici kalani alir, igne hep gorunur. */
+  body.narrow .tel header { gap:4px; font-size:10px; flex-wrap:nowrap; max-width:100%; }
+  body.narrow .tel header > b {
+    flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  /* Secici de kisalabilmeli: flex:1 sabit taban genisligiyle birlesince kart
+     genisligini iceriden itiyor ve igneyi kenardan disari atiyordu. */
+  body.narrow .tel header select { flex:1 1 0; min-width:0; width:0; }
+  body.narrow .tel header .pin { flex:0 0 auto; }
   .kutu { background:#2b2d30; border:1px solid #393b40; border-radius:8px; padding:10px; }
   .kutu h3 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:#9da0a8; }
   #record { font-family:ui-monospace,Consolas,monospace; font-size:11px; max-height:170px; overflow:auto; }
@@ -680,7 +705,7 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
   <button onclick="act({type:'forward'})">▶</button>
   <button onclick="act({type:'reload'})">⟳</button>
   <input id="url" onkeydown="if(event.key==='Enter')act({type:'goto',url:this.value})" placeholder="http://localhost:3000">
-  <button onclick="act({type:'goto',url:document.getElementById('url').value})">Git</button>
+  <button onclick="act({type:'goto',url:document.getElementById('url').value})">Go</button>
   <select id="theme" onchange="act({type:'device',theme:this.value})">
     <option value="light">light</option><option value="dark">dark</option>
   </select>
@@ -707,7 +732,8 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
 
   function paneOlustur(o) {
     const d = document.createElement('div');
-    d.className = 'tel'; d.dataset.session = o.id;
+    d.className = 'tel';
+    d.dataset.session = o.id;
     d.innerHTML = '<header><b>' + o.id + '</b>' +
       '<select class="cihazSec"></select>' +
       '<button class="pin" title="Pin note + frame for your AI">📌</button>' +
@@ -812,6 +838,14 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
     const open = document.querySelector('.tel.picking');
     if (open) { open.classList.remove('picking'); toast('selection cancelled'); }
   });
+
+  // Kenar cubugu dar; eklenti paneli ?narrow=1 ile acar. ?dar=1 eski eklenti
+  // surumlerinden geliyor — kabul ediliyor, cunku sessizce genis acmak tam da
+  // kullanicinin sikayet ettigi sey.
+  {
+    const q = new URLSearchParams(location.search);
+    if (q.has('narrow') || q.has('dar')) document.body.classList.add('narrow');
+  }
 
   const es = new EventSource('/stream');
   es.addEventListener('frame', (e) => {

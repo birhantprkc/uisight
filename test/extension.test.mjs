@@ -69,3 +69,25 @@ test('the default tool path points at a folder that really holds the server', ()
   const p = manifest.contributes.configuration.properties['uisight.toolPath'].default;
   assert.equal(slashes(p).toLowerCase(), slashes(root).toLowerCase());
 });
+
+test('the narrow-mode flag the extension sends is one the panel reads', () => {
+  // The extension opens the panel in a ~300px side bar, where the default
+  // two-column layout is unreadable. It asked for `?dar=1` for a while after the
+  // server had stopped reading any such flag — so the side panel quietly showed
+  // the wide layout, which is the thing narrow mode exists to prevent.
+  const sent = [...ext.matchAll(/\?([a-z]+)=1/g)].map((m) => m[1]);
+  assert.ok(sent.length, 'the extension must ask for narrow mode');
+  for (const flag of sent) {
+    assert.ok(
+      server.includes(`q.has('${flag}')`),
+      `the panel never reads ?${flag}=1`,
+    );
+  }
+});
+
+test('narrow mode hides the desktop session and caps the card at the viewport', () => {
+  // Both halves matter: hiding one column is pointless if the remaining card
+  // still sizes itself to its own image and overflows the side bar.
+  assert.match(server, /body\.narrow \.tel\[data-session="web"\] \{ display:none/);
+  assert.match(server, /body\.narrow \.tel \{[^}]*max-width:100%/);
+});

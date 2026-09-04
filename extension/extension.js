@@ -107,7 +107,7 @@ function gomuluHtml(p, dar) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src http://localhost:${p} http://127.0.0.1:${p}; style-src 'unsafe-inline';">
 <style>html,body,iframe{margin:0;padding:0;border:0;width:100%;height:100vh;display:block;background:#1e1f22;}</style>
-</head><body><iframe src="http://localhost:${p}${dar ? '?dar=1' : ''}" allow="clipboard-read; clipboard-write"></iframe></body></html>`;
+</head><body><iframe src="http://localhost:${p}${dar ? '?narrow=1' : ''}" allow="clipboard-read; clipboard-write"></iframe></body></html>`;
 }
 
 const bilgiHtml = (m) => `<!doctype html><meta charset="utf-8">
