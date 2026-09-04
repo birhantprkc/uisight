@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.11.0 — 2026-09-04
+
+The update notice was written for the wrong reader.
+
+stderr is right for a terminal, where a person is watching. Under MCP it is
+exactly wrong: the client files server stderr into a log, so the model never
+sees it — and the model is the one who could actually fix it. An assistant that
+does not know an update exists cannot offer to install it.
+
+`status` now carries the news where the model reads it, and carries the fix with
+it, including the step that fails silently when skipped: updating the package
+does not restart the server already running, so the old one keeps answering
+while everyone believes it was updated.
+
+The stderr line stays for CLI runs. Neither one ever touches stdout, which
+belongs to JSON-RPC — a test starts the real server, asks for `status`, and
+proves every stdout line is still a JSON-RPC message.
+
 ## 0.10.0 — 2026-09-04
 
 Everything shipped since 0.1.4 is invisible to the person still running 0.1.4.

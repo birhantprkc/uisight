@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { compareVersions, updateNotice, currentVersion, latestVersion } from '../src/update-check.mjs';
+import { compareVersions, updateNotice, agentUpdateNotice, currentVersion, latestVersion } from '../src/update-check.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -88,6 +88,64 @@ test('the MCP server keeps stdout clean even when the notice fires', async () =>
     }
     assert.ok(!out.stdout.includes('is out (you have'), 'the notice must never reach stdout');
     assert.match(out.stderr, /99\.0\.0 is out/, 'and it must actually have fired, or this proves nothing');
+  } finally {
+    if (saved === null) { try { unlinkSync(cache); } catch {} }
+    else writeFileSync(cache, saved, 'utf8');
+  }
+});
+
+/**
+ * stderr is the right channel for a terminal and the wrong one for MCP: the
+ * client files server stderr into a log, so the model never sees it and cannot
+ * offer to do anything about it. The assistant-facing copy has to reach the one
+ * place the model does read — a tool result — and it has to carry the fix, not
+ * just the fact.
+ */
+test('the assistant-facing notice tells the model what to do, not only what happened', () => {
+  const n = agentUpdateNotice('0.1.4', '0.10.0');
+  assert.ok(n, 'an out-of-date server must say so where the model can see it');
+  assert.match(n, /0\.10\.0 is available/);
+  assert.match(n, /npm i -g uisight@latest/, 'the fix, or the model has to guess');
+  assert.match(n, /RESTART/, 'the step that silently fails if skipped');
+});
+
+test('an up-to-date server adds nothing to the tool output', () => {
+  assert.equal(agentUpdateNotice('0.10.0', '0.10.0'), null);
+  assert.equal(agentUpdateNotice('0.11.0', '0.10.0'), null, 'ahead of the registry is not behind it');
+  assert.equal(agentUpdateNotice('0.10.0', null), null, 'a failed lookup stays quiet');
+});
+
+test('the status tool carries the notice, and stdout is still only JSON-RPC', async () => {
+  const cache = join(homedir(), '.uisight', 'update-check.json');
+  let saved = null;
+  try { saved = readFileSync(cache, 'utf8'); } catch { /* nothing cached */ }
+  mkdirSync(dirname(cache), { recursive: true });
+  writeFileSync(cache, JSON.stringify({ checkedAt: Date.now(), latest: '99.0.0' }), 'utf8');
+
+  try {
+    const out = await new Promise((resolve) => {
+      const p = spawn(process.execPath, [join(root, 'src', 'mcp.mjs')], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, CI: '', NO_UPDATE_NOTIFIER: '' },
+      });
+      let stdout = '';
+      p.stdout.on('data', (d) => { stdout += d; });
+      const send = (o) => p.stdin.write(JSON.stringify(o) + '\n');
+      send({ jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 't', version: '1' } } });
+      // The tool list proves the server is up before status is asked for.
+      setTimeout(() => send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }), 800);
+      setTimeout(() => { p.kill(); resolve(stdout); }, 5000);
+    });
+
+    for (const line of out.split('\n').filter((l) => l.trim())) {
+      assert.doesNotThrow(() => JSON.parse(line), `not JSON-RPC on stdout: ${line.slice(0, 100)}`);
+    }
+    // The notice must never be a bare line on stdout; only ever inside a result.
+    for (const line of out.split('\n').filter((l) => l.trim())) {
+      const parsed = JSON.parse(line);
+      assert.ok(parsed.jsonrpc === '2.0', 'every stdout line is a JSON-RPC message');
+    }
   } finally {
     if (saved === null) { try { unlinkSync(cache); } catch {} }
     else writeFileSync(cache, saved, 'utf8');

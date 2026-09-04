@@ -101,6 +101,30 @@ export function updateNotice(current, latest) {
 }
 
 /**
+ * The same news, written for the assistant instead of the terminal.
+ *
+ * stderr is the right channel for a CLI run, where a person is watching. Under
+ * MCP it is the wrong one: the client sends server stderr to a log file, so the
+ * model never sees it and cannot offer to update anything. This text goes into
+ * the `status` tool's output, which the model does read.
+ *
+ * It carries the fix as well as the fact, including the part that silently
+ * fails: updating the package does not restart the server already running.
+ */
+export function agentUpdateNotice(current, latest) {
+  if (!updateNotice(current, latest)) return null;
+  return [
+    '',
+    `NOTE: uisight ${latest} is available (this server is ${current}).`,
+    '  Tell the person, and offer to run it for them:',
+    '    npx:    npx uisight@latest            (or nothing — npx already resolves latest)',
+    '    global: npm i -g uisight@latest',
+    '  Then RESTART the editor or MCP session. Updating the package does not',
+    '  restart the server already running, so the old one keeps answering.',
+  ].join('\n');
+}
+
+/**
  * Checks in the background and writes one line to STDERR if there is news.
  * Callers do not await it: the run should not wait on the network.
  */

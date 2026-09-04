@@ -27,7 +27,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkPort } from './login.mjs';
-import { checkForUpdate } from './update-check.mjs';
+import { checkForUpdate, agentUpdateNotice, currentVersion, latestVersion } from './update-check.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || 5055);
@@ -280,6 +280,11 @@ tool('status', 'durum',
       out.push('\nrecent records (console/network/marks):');
       for (const k of recs) out.push(`  [${k.session}] ${k.type}: ${k.message}`);
     } else out.push('no records (console/network clean)');
+
+    // The cached daily answer; never a network wait on the hot path.
+    const note = agentUpdateNotice(currentVersion(), await latestVersion().catch(() => null));
+    if (note) out.push(note);
+
     return { content: [text(out.join('\n'))] };
   });
 
