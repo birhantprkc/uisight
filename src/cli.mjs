@@ -1090,6 +1090,24 @@ export const INSPECTION_SCRIPT = (settings) => {
       // sorun olmayabilir; tiklanabilir bir sey ise metin gercekten kayboluyor.
       const k = ust.closest('button, a[href], [role="button"], input, select, textarea');
       if (!k || dekoratif(k)) continue;
+
+      // Kapatilabilir bir katmanin arkasindaki metin KAYIP degil: kullanici
+      // kapatir, metin oradadir. Cerez banner'i fiyat kartinin ustune oturuyordu
+      // ve bulgu uretti — oysa "Sadece zorunlu"ya basinca her sey gorunur.
+      //
+      // Ayrim onemli: ayni banner'in bir KONTROLU ortmesi gercek sorundur
+      // (kullanici o dugmeye ulasamaz), o yuzden coveredControls'da muafiyet YOK.
+      // Burada ortulen sey bilgi metni, ve o metin bir tik otede duruyor.
+      const KAPAT = /kabul|accept|allow|tamam|onayla|agree|got it|anladim|anladım|reddet|reject|decline|sadece zorunlu|only essential|kapat|close|dismiss/i;
+      let kapatilabilir = false;
+      for (let n = k; n && n !== document.body; n = n.parentElement) {
+        if (n.getAttribute?.('role') === 'dialog' || n.getAttribute?.('aria-modal') === 'true') { kapatilabilir = true; break; }
+        const ns = getComputedStyle(n);
+        if (ns.position !== 'fixed' && ns.position !== 'sticky' && ns.position !== 'absolute') continue;
+        const dugmeler = [...n.querySelectorAll('button, [role="button"], a[href]')];
+        if (dugmeler.some((d) => KAPAT.test((d.textContent || '').trim()))) { kapatilabilir = true; break; }
+      }
+      if (kapatilabilir) continue;
       ortuk++;
       ortucu = k;
     }

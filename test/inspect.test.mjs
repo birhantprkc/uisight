@@ -648,6 +648,27 @@ test('text beside a button, not under it, is not reported', async () => {
   assert.equal((d.textUnderControl || []).length, 0, 'a normal row is not a collision');
 });
 
+test('text behind a dismissible consent banner is not reported', async () => {
+  // Found on a real page the first time this check ran: a cookie banner sat over
+  // a pricing card and produced a finding. Pressing "only essential" reveals
+  // everything — the text is one tap away, not lost.
+  //
+  // The distinction matters: the same banner covering a CONTROL is a real bug,
+  // because the user cannot reach that control. So coveredControls keeps no such
+  // exemption; this one is only about text.
+  const d = await inspect(body(`
+    <div style="position:relative;width:360px">
+      <p style="position:absolute;top:0;left:0;width:340px;margin:0">
+        Bordro puantajı, tatil zammı otomatik hesaplanır
+      </p>
+      <div style="position:fixed;bottom:0;left:0;right:0;background:#fff;padding:8px">
+        <p style="margin:0">Çerez ve gizlilik</p>
+        <button style="position:absolute;top:-40px;left:60px;width:200px;height:40px">Sadece zorunlu</button>
+      </div>
+    </div>`));
+  assert.equal((d.textUnderControl || []).length, 0, 'a banner is dismissed, not permanent');
+});
+
 test('a decorative layer over text is not a control and is not reported', async () => {
   const d = await inspect(body(`
     <div style="position:relative;width:360px">
