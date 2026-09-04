@@ -49,7 +49,9 @@ Fair — and partly true. Computer use, browser tools and most agent harnesses c
 
 **1. Looking isn't measuring.** A vision model reading a screenshot cannot tell you a contrast ratio. It can't tell 4.6:1 (fine) from 4.3:1 (fails WCAG AA) — they look identical. It won't notice that a tap target is 41px instead of 44px, or that an element renders identically in light and dark mode because its color is hard-coded. uisight computes these from the live DOM: alpha-composited backgrounds, gradient text, `oklch()` colors and all.
 
-**2. Screenshots cost more and say less.** A mobile screenshot is roughly 1,500 tokens of pixels the model has to interpret. The equivalent `inspect` result is a few hundred tokens of facts it can act on directly. Someone put it perfectly under the launch thread: *"it burns some tokens but it manages."* This is the version that doesn't burn them.
+**2. The same price buys far more.** This used to claim a screenshot costs several times what a measurement does. Measured, that is not true: a mobile frame is ~460 tokens and the matching `inspect` result is ~570. `inspect` is not the cheap option — it is the option that says `4.38:1 (threshold 4.5)` where a picture only lets the model guess.
+
+The real saving is a different choice: `uisight <url>` writes a report the model reads once (~800 tokens), while driving the MCP tools screen by screen re-sends the whole conversation at every step. Someone put the problem perfectly under the launch thread: *"it burns some tokens but it manages."* [What it costs](#what-it-costs) has the whole table, because a claim like this one is worth checking.
 
 **3. Nobody's watching with you.** In the usual setup the agent looks at the page alone and reports back. Here you both watch the same live session — you see what it does as it does it, and when *you* spot something, you pin it (📌) with a note and the agent reads your note plus that exact frame. No more describing a bug in words.
 
@@ -197,6 +199,14 @@ the same public pages.
 `extension/` is a VS Code / Antigravity extension: the live panel in the side
 bar, plus commands for device, theme, address, inspect and "send the screen to
 your AI".
+
+Search for `uisight` in the extensions panel of Antigravity, Cursor or
+VSCodium — [open-vsx.org/extension/sololabstr/uisight](https://open-vsx.org/extension/sololabstr/uisight).
+Node.js is the only requirement: the extension runs the published package
+through `npx uisight@latest`, so the engine updates itself and installing once
+keeps getting new checks.
+
+To build it from this repo instead:
 
 ```bash
 cd extension && npx @vscode/vsce package

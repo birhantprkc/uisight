@@ -20,9 +20,9 @@ Kısmen doğru — computer use, tarayıcı araçları ve çoğu ajan iskeleti s
 
 **1. Bakmak ölçmek değil.** Görüntüye bakan bir model kontrast oranı söyleyemez; 4,6:1 (geçer) ile 4,3:1'i (AA'da kalır) ayırt edemez — gözle aynı görünürler. Dokunma hedefinin 44 değil 41px olduğunu ya da bir elemanın açık/koyu temada aynı kaldığını (rengi sabit-kodlu) fark etmez. uisight bunları canlı DOM'dan hesaplar: alfa-harmanlı zeminler, gradient yazı, `oklch()` renkler dahil.
 
-**2. Ekran görüntüsü hem pahalı hem az şey söyler.** Bir mobil kare ~1.500 token; karşılığı olan `denetle` çıktısı birkaç yüz token ve doğrudan aksiyona dönüşen bilgi.
+**2. Aynı paraya çok daha fazlası.** Ölçtük: bir mobil kare ~460 token, karşılığı olan `inspect` çıktısı ~570. Yani ucuz olduğu için değil — **aynı fiyata, görüntünün söyleyemeyeceği şeyi söylediği için** kullanılıyor. Asıl tasarruf başka yerde: `uisight <adres>` koşup raporu okutmak ~800 token, tek sefer; MCP araçlarını ekran ekran sürmek ise her adımda tüm sohbeti yeniden gönderir.
 
-**3. Kimse seninle birlikte bakmıyor.** Alışıldık kurulumda ajan sayfaya tek başına bakıp rapor eder. Burada aynı canlı oturumu ikiniz izlersiniz; bir sorun gördüğünde 📌 ile not bırakırsın, ajan notunu ve o anki kareyi okur.
+**3. Kimse seninle birlikte bakmıyor.** Alışıldık kurulumda ajan sayfaya tek başına bakıp rapor eder. Burada aynı canlı oturumu ikiniz izlersiniz; bir sorun gördüğünde 📌 ile alanı seçip not bırakırsın, ajan notunu ve o kırpılmış kareyi okur.
 
 Kapsam notu: uisight **web/responsive** içindir. Native iOS/Android uygulama kontrolü için [Argent](https://github.com/software-mansion/argent) çok daha kapsamlıdır.
 
@@ -31,17 +31,40 @@ Kapsam notu: uisight **web/responsive** içindir. Native iOS/Android uygulama ko
 ```bash
 npx uisight https://siteniz.com --theme both     # tek seferlik denetim: PNG + galeri + rapor
 npx uisight-panel http://localhost:3000          # canlı panel: sen gez, AI izlesin (ve tersi)
+npx uisight-audit                                # giriş yapıp her rolü gezer
 ```
 
 MCP kaydı (Claude Code): `claude mcp add --scope user uisight -- npx -y uisight-mcp`
 
 Türkçe araç adları için: `UISIGHT_LANG=tr` (`ekrani_gor`, `denetle`, `git`, `tikla`, `yaz`, `kaydir`, `cihaz_degistir`, `durum`, `isaretler`).
 
+Araç tanımları her istekte gönderilir (~1.065 token). Yalnız ölçüm yapan bir oturum için `UISIGHT_TOOLS=core` bunu ~419'a indirir.
+
+## Editör eklentisi (terminal istemeyenler için)
+
+Antigravity, Cursor ve VSCodium'da eklenti panelinden `uisight` aratıp kurun — kenar çubuğunda kendi ikonu olur, panel editörün içinde açılır. Node.js dışında bir şey gerekmez; motoru kendisi `npx uisight@latest` ile çeker, yani **kurduktan sonra kendini günceller**.
+
+[open-vsx.org/extension/sololabstr/uisight](https://open-vsx.org/extension/sololabstr/uisight)
+
 ## Ne ölçer
 
-Görünmez metin ve WCAG AA kontrast ihlalleri (alfa-harmanlı zeminler, gradient yazı, `oklab()` dahil) · 44px altı dokunma hedefleri · yatay taşma · 12px altı yazı · **tema kayması** (iki temada da aynı kalan = sabit-kodlu renk) · cihaz başına konsol/ağ hataları.
+**Okunuyor mu** — görünmez metin, WCAG AA kontrast ihlalleri (alfa-harmanlı zemin, gradient yazı, `oklab()`/`oklch()` dahil), 12px altı yazı, kabına sığmayıp kırpılan metin.
 
-Panelde 📌: not yaz, iğnele — AI notunu ve o anki ekranı `marks`/`isaretler` aracıyla okur. "Ekran görüntüsü atayım da bak" devri kapanır.
+**Ulaşılıyor mu** — 44px altı dokunma hedefleri, üstüne başka bir şey binen kontroller (geometriyle değil `elementFromPoint` ile doğrulanır), sabit çubuk ya da **ekran klavyesi** altında kalanlar, çentik/ev çubuğu altına düşen sabit çubuklar, yatay taşma.
+
+**Mantıklı mı** — hepsi aynı görünen eylem grubu (hangisi ana eylem belli değil), karanlık modda kalan açık alanlar, aynı ekranda iki dil, ABD tarih biçimi, hiçbir şey söylemeyen hata mesajı, sayfada hiç onay adımı olmadan duran silme düğmesi, gerekçesiz izin isteği.
+
+**Bakarak ölçülemeyenler** — ağ gerçekten kesilir (`offline-audit`: açıklama mı, sonsuz dönen çember mi?) ve geri tuşuna gerçekten basılır (`back-audit`).
+
+Ayrıca: **tema kayması** (iki temada da aynı kalan = sabit-kodlu renk) · cihaz başına konsol/ağ hataları.
+
+Her kontrolün iki testi var: yakaladığını gösteren ve **doğru davranışta sustuğunu** gösteren. İkincisi daha önemli — her alt gezinme çubuğunda öten bir kontrol, kimsenin okumadığı bir kontroldür.
+
+## Giriş arkası
+
+Elle bulunan dört gerçek hatanın üçü girişin arkasındaydı, biri yalnız tek bir rolde görünüyordu. `uisight-audit` giriş yapar, uygulamanın kendi rol değiştirme ucunu kullanır ve hiçbir rolde ölçülmemiş sayfaları öne alır. Hesaplar `~/.uisight/accounts.json` içinde.
+
+Panelde 📌: alanı sürükle, not yaz — AI notunu ve o kırpılmış kareyi `marks`/`isaretler` aracıyla okur. "Ekran görüntüsü atayım da bak" devri kapanır.
 
 Her şey lokal çalışır — bulut yok, hesap yok. Ayrıntı: [README.md](README.md) (İngilizce).
 

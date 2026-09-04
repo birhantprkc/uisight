@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.11.1 — 2026-09-04
+
+Documentation, and one claim in it that was not true.
+
+The pitch said a mobile screenshot costs "roughly 1,500 tokens" against "a few
+hundred" for a measurement. Measured: 460 and 570. `inspect` is not the cheap
+option — it is the option that says `4.38:1 (threshold 4.5)` where a picture only
+lets the model guess, and the real saving is running the CLI once instead of
+driving the tools screen by screen. A tool whose whole argument is "measure it
+instead of guessing" cannot leave an unmeasured number in its own README.
+
+Screenshots regenerated. The old ones were from 20 August and showed a Turkish
+`Git` button, a session labelled `mobil`, and an inspection panel with two badges
+in it — an advertisement for a thinner tool than the one that exists.
+
+The Turkish summary had not been touched since 30 August and described none of
+it: sign-in and roles, the keyboard, the notch, offline and back, the extension.
+It does now.
+
 ## 0.11.0 — 2026-09-04
 
 The update notice was written for the wrong reader.
