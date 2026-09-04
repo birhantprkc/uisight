@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.0 — 2026-09-04
+
+The audit can now get past the sign-in wall, and it can see the keyboard.
+
+**Sign-in** (`login.mjs`, `login` / `role` / `links` actions). Of four real bugs a
+person found by hand, three were behind a login the crawler never passed. Three
+routes are tried: a `code` in the recipe, a `devCode` returned by the app's own
+OTP response, or a password field. The second is the good one — an app in demo
+mode is audited with no stored secret at all.
+
+Success means LEAVING the login page. "HTTP 200" would call a wrong code a win.
+
+**Roles without extra accounts.** Some apps let an admin view the system as
+another role; `switchRole` uses that mechanism instead of asking you to keep one
+login per role. What a guide sees is not what an agency sees, and crawling with
+one identity leaves half the app unaudited.
+
+**Keyboard** (`keyboard`, `keyboard-audit`). Chromium's device emulation has no
+soft keyboard: focusing a field changes nothing, so "the field ended up behind
+the keyboard" was structurally invisible. Both behaviours were checked against a
+real device (Pixel 7 / API 35), and they need different models:
+
+- a focused field — Chrome scrolls it above the keyboard, so it is **not** a bug.
+- a fixed bottom bar — stays pinned to the layout bottom and disappears. Shrinking
+  the viewport moves it up and hides the bug, so it is measured against a band.
+
+A floating chat button behind the keyboard is not reported: nearly every app has
+one and it blocks nothing. A wide action bar or a submit is.
+
 ## 0.3.3 — 2026-09-04
 
 **A round button is not covered by what shows through its corners.** A circle

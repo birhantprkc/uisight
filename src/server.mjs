@@ -26,6 +26,7 @@ import { exec } from 'node:child_process';
 import { homedir, platform } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PROFILES, deviceSettings, INSPECTION_SCRIPT, missingBrowser } from './cli.mjs';
+import { signIn, switchRole, recipeFor, accountNames } from './login.mjs';
 
 
 // Live artifacts live under the user's home — never inside the package (npx → node_modules).
@@ -113,9 +114,11 @@ const publicState = () => ({
   theme: state.theme,
   error: state.error,
   sessions: [...sessions.values()].map((o) => ({
-    id: o.id, device: o.deviceKey, label: o.profile.label, viewport: o.viewport, mobile: o.profile.mobile !== false,
+    id: o.id, device: o.deviceKey, label: o.profile.label, viewport: o.viewport,
+    mobile: o.profile.mobile !== false, keyboard: !!o.keyboard,
   })),
   devices: Object.entries(PROFILES).map(([k, v]) => ({ k, label: v.label, mobile: v.mobile !== false })),
+  accounts: accountNames(state.url),
   records: state.records.slice(-30),
 });
 
@@ -143,11 +146,27 @@ async function openSession(id, deviceKey, theme) {
   const page = await ctx.newPage();
   const o = {
     id, deviceKey, profile, ctx, page, cdp: null, fallbackTimer: null,
-    viewport: settings.viewport, lastFrame: null, lastWrite: 0,
+    viewport: settings.viewport, fullViewport: settings.viewport, keyboard: false,
+    lastFrame: null, lastWrite: 0,
   };
   // Register in the map only AFTER the first goto completes: when the setup goto races
   // an incoming `goto` action on the same page, Chromium can commit the late navigation
   // as chrome-error (hit during the Aug 17 MCP live test).
+
+  // Focusing a text field raises the keyboard, exactly as on a phone. Chromium's
+  // device emulation has NO soft keyboard, so without simulating it the whole
+  // class of "the field ended up behind the keyboard" bugs is invisible here.
+  page.exposeBinding('__uisightFocus', (_src, open) => applyKeyboard(o, open)).catch(() => {});
+  page.addInitScript(() => {
+    const isText = (el) => !!el && (
+      (el.tagName === 'INPUT' && !['button', 'submit', 'checkbox', 'radio', 'range', 'file', 'color', 'reset', 'image'].includes((el.type || 'text').toLowerCase()))
+      || el.tagName === 'TEXTAREA' || el.isContentEditable
+    );
+    addEventListener('focusin', (e) => { if (isText(e.target)) window.__uisightFocus?.(true); }, true);
+    addEventListener('focusout', () => {
+      setTimeout(() => { if (!isText(document.activeElement)) window.__uisightFocus?.(false); }, 120);
+    }, true);
+  }).catch(() => {});
 
   page.on('pageerror', (e) => addRecord(id, 'js-error', e));
   page.on('console', (m) => { if (m.type() === 'error') addRecord(id, 'console', m.text()); });
@@ -168,6 +187,34 @@ async function openSession(id, deviceKey, theme) {
   await startStream(o);
   broadcast('state', publicState());
   return o;
+}
+
+/**
+ * Show or hide the keyboard by shrinking and restoring the viewport.
+ *
+ * Checked against a real device (Pixel 7 / API 35): a phone keyboard covers
+ * roughly 45% of the screen. The number is not meant to be pixel-exact, it is
+ * meant to make the page answer "does this end up under the keyboard".
+ */
+const KEYBOARD_SHARE = 0.45;
+
+async function applyKeyboard(o, open, force = false) {
+  // The audit measures WITHOUT shrinking (see below). If this listener shrank the
+  // viewport underneath it, every field would look hidden.
+  if (o?.auditing && !force) return;
+  if (!o || !o.page || o.keyboard === open) return;
+  if (!o.profile || o.profile.mobile === false) return;
+  o.keyboard = open;
+  const full = o.fullViewport || o.viewport;
+  const next = open ? { width: full.width, height: Math.round(full.height * (1 - KEYBOARD_SHARE)) } : full;
+  try {
+    await o.page.setViewportSize(next);
+    o.viewport = next;
+    addRecord(o.id, 'keyboard', open ? `open — viewport ${next.height}px (was ${full.height}px)` : 'closed');
+    broadcast('state', publicState());
+  } catch (e) {
+    addRecord(o.id, 'keyboard', 'could not apply: ' + String(e).slice(0, 80));
+  }
 }
 
 /** Frame stream: CDP screencast first (3 attempts), falling back to a screenshot per second.
@@ -281,6 +328,148 @@ async function applyAction(g) {
         for (const o of [...sessions.values()]) await openSession(o.id, g.device || o.deviceKey, state.theme);
       }
       return { ok: true };
+    }
+
+    case 'keyboard': {
+      const targets = g.session ? [sessions.get(g.session)].filter(Boolean) : [...sessions.values()];
+      for (const o of targets) await applyKeyboard(o, !!g.open, true);
+      return { ok: true };
+    }
+
+    case 'keyboard-audit': {
+      // Two different failures, and one model cannot see both. Both verified on a
+      // real device:
+      //
+      //   a focused field  — Chrome scrolls it ABOVE the keyboard, so it is NOT a
+      //                      bug. Measure by shrinking the viewport, letting the
+      //                      browser reflow and scroll, and only then looking.
+      //   a fixed bottom bar — stays pinned to the LAYOUT bottom and vanishes
+      //                      behind the keyboard. Shrinking moves it up and HIDES
+      //                      the bug, so measure it against a band instead.
+      const targets = g.session ? [sessions.get(g.session)].filter(Boolean) : [...sessions.values()];
+      const results = [];
+      for (const o of targets) {
+        if (!o || o.profile.mobile === false) continue;
+        const was = o.keyboard;
+        await applyKeyboard(o, false, true);
+        o.auditing = true;
+        const findings = [];
+        try {
+          const fields = await o.page.$$('input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=range]):not([type=file]), textarea, [contenteditable="true"]');
+          for (const el of fields.slice(0, 15)) {
+            let name = '(unnamed)';
+            try {
+              name = await el.evaluate((e) => e.getAttribute('aria-label') || e.placeholder || e.name || e.id || e.tagName.toLowerCase());
+            } catch { /* keep the fallback */ }
+            try {
+              await el.scrollIntoViewIfNeeded({ timeout: 3000 });
+              await el.focus({ timeout: 3000 });
+            } catch { continue; }
+            await applyKeyboard(o, true, true);
+            await new Promise((r) => setTimeout(r, 500));
+            await el.scrollIntoViewIfNeeded({ timeout: 2000 }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 250));
+            const m = await el.evaluate((e) => {
+              const r = e.getBoundingClientRect();
+              return { top: r.top, bottom: r.bottom, height: r.height, screen: innerHeight };
+            }).catch(() => null);
+            if (!m) continue;
+            const shown = Math.max(0, Math.min(m.bottom, m.screen) - Math.max(m.top, 0));
+            const ratio = m.height > 0 ? shown / m.height : 1;
+            if (ratio < 0.6) {
+              findings.push({
+                field: String(name).slice(0, 40), visiblePercent: Math.round(ratio * 100),
+                position: Math.round(m.top) + '-' + Math.round(m.bottom) + 'px',
+                screen: m.screen, kind: 'field',
+              });
+            }
+          }
+        } catch (e) {
+          findings.push({ error: String(e).split(String.fromCharCode(10))[0].slice(0, 120) });
+        }
+
+        try {
+          await applyKeyboard(o, false, true);
+          await new Promise((r) => setTimeout(r, 300));
+          const bars = await o.page.evaluate((share) => {
+            const c = [];
+            for (const el of document.querySelectorAll('button, a[href], input[type=submit]')) {
+              let pinned = false;
+              for (let n = el; n && n !== document.body; n = n.parentElement) {
+                const s = getComputedStyle(n);
+                if (s.position === 'fixed' || s.position === 'sticky') { pinned = true; break; }
+              }
+              if (!pinned || getComputedStyle(el).display === 'none') continue;
+              const r = el.getBoundingClientRect();
+              if (r.width < 40 || r.height < 20) continue;
+
+              // A floating chat/help button sitting behind the keyboard is normal —
+              // nearly every app has one, and reporting all of them is noise. What
+              // actually blocks a person is an ACTION BAR: a wide button, or a
+              // submit, that they cannot reach to finish the form.
+              const wide = r.width >= innerWidth * 0.4;
+              const submits = el.type === 'submit' || /submit/i.test(el.getAttribute('type') || '');
+              if (!wide && !submits) continue;
+
+              const band = innerHeight * (1 - share);
+              const shown = Math.max(0, Math.min(r.bottom, band) - Math.max(r.top, 0));
+              if (shown / r.height < 0.5) {
+                c.push({
+                  field: (el.innerText || el.getAttribute('aria-label') || '').trim().slice(0, 40) || '(no text)',
+                  visiblePercent: Math.round((shown / r.height) * 100),
+                  position: Math.round(r.top) + '-' + Math.round(r.bottom) + 'px',
+                  screen: innerHeight, keyboardFreeBand: Math.round(band), kind: 'pinned-control',
+                });
+              }
+            }
+            return c.slice(0, 6);
+          }, KEYBOARD_SHARE);
+          findings.push(...bars);
+        } catch { /* the page may have navigated */ }
+
+        o.auditing = false;
+        await applyKeyboard(o, was, true);
+        results.push({ session: o.id, device: o.deviceKey, findings });
+        addRecord(o.id, 'keyboard', `audit: ${findings.length} under the keyboard`);
+      }
+      return { ok: true, results };
+    }
+
+    case 'login': {
+      // Lets the audit reach past the sign-in wall. Recipes in ~/.uisight/accounts.json.
+      const o = targetSession(g);
+      const recipe = g.recipe || recipeFor(state.url, g.account || null);
+      if (!recipe) {
+        return { ok: false, message: `no recipe for this host — add it to ~/.uisight/accounts.json: ${new URL(state.url).host}` };
+      }
+      addRecord(o.id, 'login', `account: ${g.account || recipe.name || '(default)'}`);
+      const s = await signIn(o.page, recipe, (m) => addRecord(o.id, 'login', m));
+      addRecord(o.id, 'login', s.ok ? `signed in (${s.route}) -> ${s.message}` : `failed [${s.step}]: ${s.message}`);
+      if (s.ok) { state.url = o.page.url(); broadcast('state', publicState()); }
+      return { ok: s.ok, result: s };
+    }
+
+    case 'role': {
+      const o = targetSession(g);
+      const recipe = recipeFor(state.url, g.account || null);
+      if (!recipe) return { ok: false, message: 'no recipe for this host' };
+      const s = await switchRole(o.page, recipe, g.role, (m) => addRecord(o.id, 'role', m));
+      if (s.ok) { state.url = o.page.url(); broadcast('state', publicState()); }
+      else addRecord(o.id, 'role', 'failed: ' + s.message);
+      return s;
+    }
+
+    case 'links': {
+      // Routes come from the app's OWN links, not from memory — a hand-guessed
+      // path was a 404 while the real one sat one link away.
+      const o = targetSession(g);
+      const root = g.root || new URL(state.url).origin;
+      const list = await o.page.evaluate((r) => [...new Set(
+        [...document.querySelectorAll('a[href]')].map((a) => a.href)
+          .filter((h) => h.startsWith(r))
+          .map((h) => { const u = new URL(h); return u.origin + u.pathname; })
+      )], root).catch(() => []);
+      return { ok: true, links: list.slice(0, 40) };
     }
 
     case 'inspect': {
