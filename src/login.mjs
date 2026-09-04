@@ -31,6 +31,22 @@ import { homedir } from 'node:os';
 
 const CONFIG = join(homedir(), '.uisight', 'accounts.json');
 
+// Ports the URL spec marks unsafe: fetch() refuses them and the only clue is
+// "bad port", which reads like a bug in this tool. 5060/5061 (SIP) sit right
+// next to the default 5055 and are an easy accident.
+const BLOCKED_PORTS = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95,
+  101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161,
+  179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563,
+  587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060,
+  5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080,
+]);
+export function checkPort(port) {
+  if (BLOCKED_PORTS.has(Number(port))) {
+    throw new Error(`port ${port} is blocked by the URL spec — browsers and fetch() refuse it. Pick another, e.g. ${Number(port) + 1}.`);
+  }
+}
+
 const read = () => {
   try { return JSON.parse(readFileSync(CONFIG, 'utf8')); } catch { return null; }
 };

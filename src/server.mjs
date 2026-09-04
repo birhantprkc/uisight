@@ -26,7 +26,7 @@ import { exec } from 'node:child_process';
 import { homedir, platform } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PROFILES, deviceSettings, INSPECTION_SCRIPT, missingBrowser } from './cli.mjs';
-import { signIn, switchRole, recipeFor, accountNames } from './login.mjs';
+import { signIn, switchRole, recipeFor, accountNames, checkPort } from './login.mjs';
 
 
 // Live artifacts live under the user's home — never inside the package (npx → node_modules).
@@ -50,6 +50,7 @@ targetUrl = targetUrl || 'http://localhost:3000';
 if (!/^https?:\/\//.test(targetUrl)) targetUrl = 'http://' + targetUrl;
 
 const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || arg('--port', 5055));
+checkPort(PORT);
 const NO_OPEN = argv.includes('--no-open');
 const SINGLE = argv.includes('--single');
 const FORCE_FALLBACK = (process.env.UISIGHT_FALLBACK || process.env.MOBILQA_YEDEK) === '1';
@@ -494,15 +495,20 @@ async function applyAction(g) {
       const o = targetSession(g);
       const ts = Date.now();
       const imageName = `${ts}-${o.id}.jpg`;
+      // With an area, crop to it. Sending the whole screen is the weakest way to
+      // say "the problem is here" — the AI has to guess where to look.
+      const area = g.area && g.area.width > 4 && g.area.height > 4 ? g.area : null;
       try {
-        const buf = o.lastFrame
-          ? Buffer.from(o.lastFrame, 'base64')
-          : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' });
+        const buf = area
+          ? await o.page.screenshot({ type: 'jpeg', quality: 90, scale: 'css', clip: area })
+          : (o.lastFrame ? Buffer.from(o.lastFrame, 'base64')
+                         : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' }));
         writeFileSync(join(MARKS_DIR, imageName), buf);
       } catch {}
       const record = {
         time: new Date(ts).toISOString(), session: o.id, device: o.deviceKey, label: o.profile.label,
         theme: state.theme, url: state.url, note: String(g.note || '').slice(0, 500), image: imageName,
+        area: area || null,
       };
       writeFileSync(join(MARKS_DIR, `${ts}.json`), JSON.stringify(record, null, 2), 'utf8');
       addRecord(o.id, 'mark', record.note || '(mark without note)');
@@ -648,7 +654,15 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
   .tel header { display:flex; gap:6px; align-items:center; padding:2px 4px 8px; font-size:11px; color:#9da0a8; }
   .tel header select { font-size:11px; padding:2px 6px; }
   .tel header .pin { padding:2px 8px; }
-  .tel img { display:block; border-radius:10px; background:#000; cursor:crosshair; max-height:74vh; width:auto; max-width:46vw; }
+  .tel img { display:block; border-radius:10px; background:#000; cursor:default; max-height:74vh; width:auto; max-width:46vw; }
+  /* Crosshair only while selecting. A permanent one made simply looking at the
+     panel feel like something was being demanded of you. */
+  .tel.picking img { cursor:crosshair; }
+  .tel { position:relative; }
+  .pickBox { position:absolute; border:2px solid #4c6fd6; background:#4c6fd633; pointer-events:none; display:none; }
+  .pickHint { position:absolute; left:8px; right:8px; top:8px; z-index:3; text-align:center;
+    background:#1e1f22e6; border:1px solid #4c6fd6; border-radius:6px; padding:6px 8px; font-size:12px; display:none; }
+  .tel.picking .pickHint { display:block; }
   .yan { flex:1; min-width:230px; display:flex; flex-direction:column; gap:10px; }
   .kutu { background:#2b2d30; border:1px solid #393b40; border-radius:8px; padding:10px; }
   .kutu h3 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:#9da0a8; }
@@ -686,7 +700,7 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
   window.__UISIGHT_TOKEN = '__TOKEN__';
   const vp = {}; // session -> viewport
   let deviceList = [];
-  let aktifOturum = 'mobile';
+  let activeSession = 'mobile';
 
   const act = (g) => fetch('/action', { method:'POST', headers:{'content-type':'application/json','x-uisight-token':window.__UISIGHT_TOKEN}, body: JSON.stringify(g) }).then(r=>r.json());
   const toast = (m) => { document.getElementById('statusLine').textContent = m; setTimeout(()=>{document.getElementById('statusLine').textContent='';}, 4000); };
@@ -697,15 +711,63 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
     d.innerHTML = '<header><b>' + o.id + '</b>' +
       '<select class="cihazSec"></select>' +
       '<button class="pin" title="Pin note + frame for your AI">📌</button>' +
-      '</header><img tabindex="0" alt="' + o.id + '">';
+      '</header><div class="pickHint">Drag the problem area &middot; one tap = whole screen &middot; Esc cancels</div><img tabindex="0" alt="' + o.id + '"><div class="pickBox"></div>';
     const img = d.querySelector('img');
     const sel = d.querySelector('select');
 
-    img.addEventListener('click', (e) => {
-      aktifOturum = o.id; vurgula();
+    const box = d.querySelector('.pickBox');
+    // Screen pixel -> page CSS pixel. Clicking already did this conversion; the
+    // selection must use the SAME scale or the crop lands somewhere else.
+    const toPage = (e) => {
       const r = img.getBoundingClientRect();
       const v = vp[o.id] || { width: r.width, height: r.height };
-      act({ type:'click', session:o.id, x: Math.round((e.clientX-r.left)*(v.width/r.width)), y: Math.round((e.clientY-r.top)*(v.height/r.height)) });
+      return { x: (e.clientX - r.left) * (v.width / r.width), y: (e.clientY - r.top) * (v.height / r.height) };
+    };
+
+    let start = null;
+    img.addEventListener('pointerdown', (e) => {
+      activeSession = o.id; highlight();
+      if (!d.classList.contains('picking')) return;
+      e.preventDefault();
+      start = { screen: { x: e.clientX, y: e.clientY }, page: toPage(e) };
+      const dr = d.getBoundingClientRect();
+      box.style.display = 'block';
+      box.style.left = (e.clientX - dr.left) + 'px';
+      box.style.top = (e.clientY - dr.top) + 'px';
+      box.style.width = '0px'; box.style.height = '0px';
+      img.setPointerCapture(e.pointerId);
+    });
+    img.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      const dr = d.getBoundingClientRect();
+      box.style.left = (Math.min(start.screen.x, e.clientX) - dr.left) + 'px';
+      box.style.top = (Math.min(start.screen.y, e.clientY) - dr.top) + 'px';
+      box.style.width = Math.abs(e.clientX - start.screen.x) + 'px';
+      box.style.height = Math.abs(e.clientY - start.screen.y) + 'px';
+    });
+    img.addEventListener('pointerup', async (e) => {
+      if (!start) return;
+      const s = start; start = null;
+      box.style.display = 'none';
+      d.classList.remove('picking');
+      const end = toPage(e);
+      const area = {
+        x: Math.round(Math.min(s.page.x, end.x)), y: Math.round(Math.min(s.page.y, end.y)),
+        width: Math.round(Math.abs(end.x - s.page.x)), height: Math.round(Math.abs(end.y - s.page.y)),
+      };
+      const body = { type:'mark', session:o.id, note: document.getElementById('note').value };
+      if (area.width > 12 && area.height > 12) body.area = area;   // one tap = whole screen
+      const r = await act(body);
+      if (r.ok) {
+        document.getElementById('note').value = '';
+        toast(body.area ? ('area marked (' + area.width + '×' + area.height + ')') : 'whole screen marked');
+      }
+    });
+    img.addEventListener('click', (e) => {
+      activeSession = o.id; highlight();
+      if (d.classList.contains('picking')) return;
+      const p = toPage(e);
+      act({ type:'click', session:o.id, x: Math.round(p.x), y: Math.round(p.y) });
       img.focus();
     });
     img.addEventListener('wheel', (e) => { e.preventDefault(); act({ type:'scroll', session:o.id, dy: e.deltaY }); }, { passive:false });
@@ -715,16 +777,18 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
       else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) { e.preventDefault(); act({ type:'press', session:o.id, text: e.key }); }
     });
     sel.addEventListener('change', () => act({ type:'device', session:o.id, device: sel.value }));
-    d.querySelector('.pin').addEventListener('click', async () => {
-      const n = document.getElementById('note').value;
-      const r = await act({ type:'mark', session:o.id, note: n });
-      if (r.ok) { document.getElementById('note').value=''; toast('mark queued — your AI can read it'); }
+    d.querySelector('.pin').addEventListener('click', () => {
+      activeSession = o.id; highlight();
+      d.classList.toggle('picking');
+      toast(d.classList.contains('picking')
+        ? 'drag the problem area (one tap = whole screen, Esc cancels)'
+        : 'selection cancelled');
     });
     return d;
   }
 
-  function vurgula() {
-    document.querySelectorAll('.tel').forEach((t) => t.classList.toggle('aktif', t.dataset.session === aktifOturum));
+  function highlight() {
+    document.querySelectorAll('.tel').forEach((t) => t.classList.toggle('aktif', t.dataset.session === activeSession));
   }
 
   function panelleriGuncelle(d) {
@@ -740,8 +804,14 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
       sel.value = o.device;
       pane.querySelector('header b').textContent = o.id + ' · ' + o.label.split('—')[0].trim();
     }
-    vurgula();
+    highlight();
   }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const open = document.querySelector('.tel.picking');
+    if (open) { open.classList.remove('picking'); toast('selection cancelled'); }
+  });
 
   const es = new EventSource('/stream');
   es.addEventListener('frame', (e) => {

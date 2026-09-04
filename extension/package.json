@@ -1,0 +1,135 @@
+{
+  "name": "uisight",
+  "displayName": "uisight — live mobile panel",
+  "description": "See the running app on a phone screen inside your editor, switch device and theme, and measure what a screenshot cannot: contrast, touch targets, covered controls.",
+  "version": "1.2.1",
+  "publisher": "sololabs",
+  "private": false,
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other",
+    "Testing"
+  ],
+  "keywords": [
+    "mobile",
+    "preview",
+    "responsive",
+    "qa",
+    "accessibility",
+    "uisight"
+  ],
+  "activationEvents": [
+    "onView:uisight.sidePanel"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "uisight.open",
+        "title": "uisight: Open panel",
+        "category": "uisight"
+      },
+      {
+        "command": "uisight.stop",
+        "title": "uisight: Stop panel",
+        "category": "uisight"
+      },
+      {
+        "command": "uisight.device",
+        "title": "uisight: Choose device",
+        "category": "uisight"
+      },
+      {
+        "command": "uisight.theme",
+        "title": "uisight: Switch theme",
+        "category": "uisight"
+      },
+      {
+        "command": "uisight.goto",
+        "title": "uisight: Go to address",
+        "category": "uisight"
+      },
+      {
+        "command": "uisight.inspect",
+        "title": "uisight: Inspect (contrast - theme - buttons)",
+        "category": "uisight"
+      },
+      {
+        "command": "uisight.send",
+        "title": "uisight: Send the screen to your AI",
+        "category": "uisight"
+      }
+    ],
+    "configuration": {
+      "title": "uisight",
+      "properties": {
+        "uisight.url": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Address the panel opens at."
+        },
+        "uisight.device": {
+          "type": "string",
+          "default": "pixel",
+          "enum": [
+            "iphone-15",
+            "iphone-se",
+            "pixel",
+            "galaxy",
+            "ipad"
+          ],
+          "description": "Default device profile."
+        },
+        "uisight.theme": {
+          "type": "string",
+          "default": "light",
+          "enum": [
+            "light",
+            "dark"
+          ],
+          "description": "Default colour theme."
+        },
+        "uisight.port": {
+          "type": "number",
+          "default": 5055,
+          "description": "Port the panel server listens on. Ports the URL spec blocks (5060, 5061, 6000...) are refused."
+        },
+        "uisight.toolPath": {
+          "type": "string",
+          "default": "c:\\dev\\uisight",
+          "description": "Folder holding src/server.mjs and node_modules."
+        },
+        "uisight.nodePath": {
+          "type": "string",
+          "default": "node",
+          "description": "Node executable. Give the full path if it is not on PATH."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "uisight",
+          "title": "uisight",
+          "icon": "media/uisight.svg"
+        }
+      ]
+    },
+    "views": {
+      "uisight": [
+        {
+          "id": "uisight.sidePanel",
+          "name": "Live panel",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sololabstr/uisight"
+  }
+}

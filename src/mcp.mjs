@@ -26,9 +26,11 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkPort } from './login.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || 5055);
+checkPort(PORT);
 const BASE = `http://127.0.0.1:${PORT}`;
 const TR = (process.env.UISIGHT_LANG || '').toLowerCase() === 'tr';
 const log = (...a) => console.error('[uisight-mcp]', ...a);

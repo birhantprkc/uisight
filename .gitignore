@@ -6,3 +6,4 @@ canli/
 *.log
 *.vsix
 package-lock.json
+extension/*.vsix

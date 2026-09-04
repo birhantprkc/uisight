@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.6.0 — 2026-09-04
+
+One copy of the code, and three failures that were silent rather than loud.
+
+**`uisight-audit`** walks every configured role and writes a report per page.
+Pages not yet measured under any role go first, so a second role spends its
+budget on new ground — that one change took a run from "6 pages, 4 of them
+already measured" to four guide pages nobody had looked at, which is where two
+covered controls and a keyboard finding turned up.
+
+**The extension was talking to a server that no longer existed.** It called
+`/act` with `{tip}` and read `d.dusukKontrast`; the panel had moved to `/action`
+with `{type}` and English keys, and later started requiring a CSRF token. None
+of that threw. The commands did nothing and Inspect said "no findings" on pages
+full of them. Fixed, and `test/extension.test.mjs` now compares the two sides so
+the next rename fails in CI instead of in front of a person.
+
+**"No primary action" was firing on bottom navigation.** Tabs, menus and filter
+chips are *supposed* to look alike. The check now skips navigation containers
+and links that lead to different pages, and only fires when the group contains
+an action that costs something to get wrong — save, delete, send, pay. Three
+false alarms on one real app went to zero without losing the real case.
+
+**Blocked ports are named.** `fetch()` refuses the ports the URL spec marks
+unsafe, and the only clue is "bad port", which reads like a bug in this tool.
+5060/5061 sit next to the default 5055 and are an easy accident — worse, a panel
+bound to one is unreachable from a browser too. Now it says which port and
+suggests another.
+
+The `mobil-qa` fork is retired; nothing was lost (its 10 checks and 16 panel
+actions all have an equivalent here) and the reason it had to go is the
+extension bug above: two copies drift, and drift between a tool and its caller
+is silent.
+
 ## 0.5.0 — 2026-09-04
 
 The audit can now get past the sign-in wall, and it can see the keyboard.

@@ -542,6 +542,19 @@ export const INSPECTION_SCRIPT = (settings) => {
   // 8) Bir grupta HER dugme ayni gorunuyorsa hangisinin ana eylem oldugu
   // anlasilmaz. "Kaydet · Iptal · Sil" ucu de ayni renkse kullanici hangisine
   // basacagini renkten degil OKUYARAK bulmak zorunda kalir.
+  //
+  // Two guards, both learned from false alarms on a real app:
+  //
+  //   * A bottom nav ("Search / Calendar / Messages / Profile") and filter chips
+  //     ("This weekend / Next week") are SUPPOSED to look alike — uniformity is
+  //     the design, and flagging it teaches people to ignore the tool.
+  //   * The finding only matters when clicking the wrong one costs something.
+  //     So the group must contain at least one committing action: save, delete,
+  //     send, pay. "Search / Calendar / Messages / Profile" contains none.
+  //
+  const COMMITTING = /^(kaydet|sil|gonder|onayla|odeme|ode|satin al|olustur|guncelle|yayinla|kabul|tamamla|iptal et|save|delete|remove|send|submit|confirm|pay|buy|create|update|publish|accept|apply|discard)\b/i;
+  const NAV_CONTAINER = 'nav, [role="tablist"], [role="navigation"], [role="menu"], [role="menubar"], [role="radiogroup"], [role="group"][aria-label*="filter" i]';
+
   const gruplar = new Map();
   document.querySelectorAll('button, a[href][class*="btn"], [role="button"]').forEach((el) => {
     if (!isVisible(el)) return;
@@ -552,8 +565,13 @@ export const INSPECTION_SCRIPT = (settings) => {
     if (!gruplar.has(p)) gruplar.set(p, []);
     gruplar.get(p).push(el);
   });
-  for (const [, uyeler] of gruplar) {
+  for (const [ebeveyn, uyeler] of gruplar) {
     if (uyeler.length < 2 || uyeler.length > 6) continue;
+    if (ebeveyn.closest(NAV_CONTAINER)) continue;                 // tabs and menus: uniform on purpose
+    // Links that go to DIFFERENT pages are navigation, whatever they are styled as.
+    const hrefler = new Set(uyeler.map((el) => el.getAttribute('href')).filter(Boolean));
+    if (hrefler.size === uyeler.length && hrefler.size > 1) continue;
+    if (!uyeler.some((el) => COMMITTING.test(shortLabel(el)))) continue;   // nothing to lose by mis-clicking
     const imzalar = uyeler.map((el) => {
       const s = getComputedStyle(el);
       const bgc = effectiveBackground(el);

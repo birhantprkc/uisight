@@ -115,14 +115,72 @@ Works inside VS Code / Antigravity via *Simple Browser: Show* → `http://localh
 
 ## What it checks
 
+**Can you read it**
+
 - Invisible text (contrast < 1.6:1) and WCAG AA contrast failures — alpha-composited backgrounds, gradient text, `oklab()`/`oklch()` colors all handled
-- Touch targets below 44px (mobile profiles only; inline text links exempt by width, per WCAG)
-- Horizontal overflow with the offending elements
 - Text below 12px, images without alt
+- Text cut off by its own container (`line-clamp` and friends are not "clipped" — they are a decision)
+
+**Can you reach it**
+
+- Touch targets below 44px (mobile profiles only; inline text links exempt by width, per WCAG)
+- Controls painted over by something else — confirmed with `elementFromPoint`, not geometry, and sampled edge to edge so a floating button covering one end of a wide button is caught
+- Controls trapped under a fixed bar, or under the on-screen keyboard (`keyboard-audit` opens the keyboard the way a phone does and re-measures)
+- Horizontal overflow with the offending elements
+
+**Does it make sense**
+
+- A row of actions where every one looks identical, so nothing says which is primary — quiet on tabs, menus and filter chips, and only fires when mis-clicking costs something (save, delete, send, pay)
+- Light patches left behind in dark mode
+- Two languages in one screen, and US date formats in a non-US locale
 - **Theme drift**: elements identical in light *and* dark = likely hard-coded colors
 - Console/JS errors and failed network requests per device
 
+Every check has a false-alarm test next to its detection test. That is not politeness: a tool that cries wolf on every bottom navigation bar gets ignored, and then its real findings go unread too.
+
 And the honest limit: automated checks cannot see *design* mistakes — a collided header measures fine. That's why `see_screen` exists and why the report says "eyeball the PNGs."
+
+## Behind the login (`uisight-audit`)
+
+Public pages are the half of an app nobody lives in. Of four real bugs a person
+found by hand and sent in, three were behind a login and one showed up for a
+single role only.
+
+```bash
+uisight-audit                        # every configured role, 10 pages each
+uisight-audit --roles guide,agency   # only these
+uisight-audit --pages 20 --port 5062
+```
+
+Accounts live in `~/.uisight/accounts.json`. Sign-in tries three routes: a fixed
+`code` (the store-review-account pattern), a `devCode` read straight out of the
+app's own OTP response (dev/demo mode — no stored secret at all), or a password
+field. Success means *leaving* the login page, not HTTP 200, so a wrong code is
+never reported as a win. When the app refuses, its own words are passed through:
+"HTTP 429 · too many codes requested" instead of a guess about demo mode.
+
+Roles are switched through the app's own view-as endpoint where it has one, so
+one admin account can audit every role. Pages not yet measured under any role go
+first, so a second role spends its budget on new ground instead of re-measuring
+the same public pages.
+
+## Editor extension
+
+`extension/` is a VS Code / Antigravity extension: the live panel in the side
+bar, plus commands for device, theme, address, inspect and "send the screen to
+your AI".
+
+```bash
+cd extension && npx @vscode/vsce package
+code --install-extension uisight-*.vsix
+```
+
+The extension talks to the panel over HTTP and nothing type-checks that
+conversation, so `test/extension.test.mjs` compares the two sides: every action
+it sends must be one the server handles, every route must exist, every result
+field it renders must be one the engine produces, and every command in the
+manifest must be registered. That test exists because the pair drifted once and
+failed *silently* — Inspect reported "no findings" on pages full of them.
 
 ## Something didn't work?
 

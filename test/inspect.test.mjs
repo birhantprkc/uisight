@@ -340,6 +340,40 @@ test('a row where the primary action stands out is not reported', async () => {
   assert.equal((d.sameLookingActions || []).length, 0, 'a distinct primary action is the point');
 });
 
+/**
+ * The three false alarms this check produced on a real app, all on one run.
+ * A bottom nav, filter chips and a link row are SUPPOSED to look uniform; a tool
+ * that flags them on every page teaches people to ignore it.
+ */
+test('a bottom navigation bar is not a row of competing actions', async () => {
+  const d = await inspect(body(`
+    <nav style="display:flex;gap:8px;padding:16px">
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Ara</button>
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Takvim</button>
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Mesaj</button>
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Profil</button>
+    </nav>`));
+  assert.equal((d.sameLookingActions || []).length, 0, 'tabs are uniform on purpose');
+});
+
+test('filter chips are not reported: mis-clicking one costs nothing', async () => {
+  const d = await inspect(body(`
+    <div style="display:flex;gap:8px;padding:16px">
+      <button style="background:#eee;border:1px solid #ccc;padding:8px 14px">Bu hafta sonu</button>
+      <button style="background:#eee;border:1px solid #ccc;padding:8px 14px">Onumuzdeki hafta</button>
+    </div>`));
+  assert.equal((d.sameLookingActions || []).length, 0, 'no committing action in the group');
+});
+
+test('links that lead to different pages are navigation, however they are styled', async () => {
+  const d = await inspect(body(`
+    <div style="display:flex;gap:8px;padding:16px">
+      <a href="/kaydet" class="btn" style="background:#eee;border:1px solid #ccc;padding:10px">Kaydet</a>
+      <a href="/sil" class="btn" style="background:#eee;border:1px solid #ccc;padding:10px">Sil</a>
+    </div>`));
+  assert.equal((d.sameLookingActions || []).length, 0, 'different destinations = navigation');
+});
+
 test('a light panel left behind in dark mode is reported', async () => {
   const d = await inspect(
     body(`<main style="background:#111;min-height:100vh">
