@@ -236,14 +236,22 @@ function gomuluHtml(p, dar, paneller = []) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${kaynaklar}; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <style>
-  html,body{margin:0;padding:0;border:0;width:100%;height:100vh;background:#1e1f22;display:flex;flex-direction:column;}
+  html,body{margin:0;padding:0;border:0;width:100%;height:100vh;
+    background:var(--vscode-editor-background,#1e1f22);display:flex;flex-direction:column;}
   iframe{margin:0;padding:0;border:0;width:100%;flex:1;display:block;background:#1e1f22;}
-  .sw{display:flex;gap:6px;align-items:center;padding:4px 6px;background:#2b2d30;border-bottom:1px solid #393b40;}
-  .sw select{flex:1;min-width:0;background:#1e1f22;color:#dfe1e5;border:1px solid #45474d;border-radius:4px;
-    padding:3px 6px;font:11px/1.4 "Segoe UI",system-ui,sans-serif;}
-  .sw button{background:#1e1f22;color:#dfe1e5;border:1px solid #45474d;border-radius:4px;cursor:pointer;
-    padding:3px 8px;font-size:12px;}
-  .sw button:hover{border-color:#4c6fd6;}
+  .sw{display:flex;gap:6px;align-items:center;padding:4px 6px;
+    background:var(--vscode-sideBar-background,#2b2d30);
+    border-bottom:1px solid var(--vscode-widget-border,#393b40);}
+  .sw select{flex:0 1 auto;min-width:0;max-width:100%;
+    background:var(--vscode-dropdown-background,#1e1f22);
+    color:var(--vscode-dropdown-foreground,#dfe1e5);
+    border:1px solid var(--vscode-dropdown-border,#45474d);border-radius:4px;
+    padding:3px 6px;font:11px/1.4 var(--vscode-font-family,"Segoe UI",system-ui,sans-serif);}
+  .sw button{background:var(--vscode-button-secondaryBackground,#1e1f22);
+    color:var(--vscode-button-secondaryForeground,#dfe1e5);
+    border:1px solid var(--vscode-dropdown-border,#45474d);border-radius:4px;cursor:pointer;
+    padding:3px 8px;font-size:12px;line-height:1.4;}
+  .sw button:hover{border-color:var(--vscode-focusBorder,#4c6fd6);}
 </style>
 </head><body>${cubuk}
 <iframe src="http://localhost:${p}${dar ? '?narrow=1' : ''}" allow="clipboard-read; clipboard-write"></iframe>
