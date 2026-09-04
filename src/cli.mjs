@@ -224,6 +224,21 @@ export const INSPECTION_SCRIPT = (settings) => {
     }
     try { return parseColor(t); } catch { return null; }
   };
+  /**
+   * Rengin kisa ve DOGRU yazimi.
+   *
+   * Iki sebep var. Biri maliyet: `oklab(0.999994 0.0000455677 0.0000200868 / 0.8)`
+   * 46 karakter, `#ffffff 80%` 11 — ve bu metin sohbette kalip her turda yeniden
+   * gonderiliyor. Digeri dogruluk: kontrast orani ZATEN bu sRGB degerinden
+   * hesaplaniyor, dolayisiyla ham oklab'i raporlamak olculmeyen bir sayiyi
+   * gostermek olur.
+   */
+  const hex = (c) => {
+    if (!c) return 'yok';
+    const iki = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+    const h = `#${iki(c.r)}${iki(c.g)}${iki(c.b)}`;
+    return c.a != null && c.a < 0.999 ? `${h} ${Math.round(c.a * 100)}%` : h;
+  };
   const channel = (c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
   const luminance = (c) => 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
   const contrast = (a, b) => {
@@ -340,8 +355,7 @@ export const INSPECTION_SCRIPT = (settings) => {
       }
       const recordG = {
         sel: describe(el) + ' (gradient text)', text, ratio: Math.round(worst * 100) / 100,
-        color: `rgba(${Math.round(worstStop.r)}, ${Math.round(worstStop.g)}, ${Math.round(worstStop.b)}, ${worstStop.a})`,
-        bg: `rgb(${Math.round(bgG.r)}, ${Math.round(bgG.g)}, ${Math.round(bgG.b)})`, fontSize: `${Math.round(fontSizeG)}px`,
+        color: hex(worstStop), bg: hex(bgG), fontSize: `${Math.round(fontSizeG)}px`,
       };
       if (worst < 1.6) result.invisibleText.push(recordG);
       else if (worst < thresholdG) result.lowContrast.push({ ...recordG, threshold: thresholdG });
@@ -358,7 +372,7 @@ export const INSPECTION_SCRIPT = (settings) => {
     const isBold = parseInt(st.fontWeight, 10) >= 700;
     const isLargeText = fs >= 24 || (fs >= 18.66 && isBold);
     const threshold = isLargeText ? 3 : 4.5;
-    const record = { sel: describe(el), text, ratio: Math.round(k * 100) / 100, color: st.color, bg: `rgb(${Math.round(bgc.r)}, ${Math.round(bgc.g)}, ${Math.round(bgc.b)})`, fontSize: `${Math.round(fs)}px` };
+    const record = { sel: describe(el), text, ratio: Math.round(k * 100) / 100, color: hex(on), bg: hex(bgc), fontSize: `${Math.round(fs)}px` };
     if (k < 1.6) result.invisibleText.push(record);        // pratikte okunmuyor
     else if (k < threshold) result.lowContrast.push({ ...record, threshold });
   }

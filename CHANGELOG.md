@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.16.0 — 2026-09-04
+
+Colours are reported as hex, which is shorter and also more honest.
+
+A contrast finding used to carry the raw computed value:
+`oklab(0.999994 0.0000455677 0.0000200868 / 0.8)`. Forty-six characters that no
+one can read, re-sent on every later turn of the conversation. It now says
+`#ffffff 80%`.
+
+The honesty half matters more. The contrast ratio was always computed from the
+sRGB value the browser resolves that colour to — so printing the raw `oklab()`
+showed a number that was not the one measured. Hex is what the maths used.
+
+And it names the thing you actually change: `#cf4709 on #fbf1ee` is recognisably
+a brand token failing on a light surface. `rgb(207, 71, 9)` made you translate;
+`oklab(...)` made you give up.
+
+### A negative result worth recording
+
+Filtering `inspect` by severity was measured across four real pages and dropped.
+Of 83 findings: 10% blocking, **87% standard** (AA contrast, 44px targets, tiny
+text, clipping), 4% advisory. Returning "blocking only" would hide nine tenths of
+what the tool is for, and dropping "advisory" saves 4%. The bulk is the middle
+tier and the middle tier is the point, so there is nothing to filter.
+
 ## 0.15.0 — 2026-09-04
 
 The second measurement of a page now reports only what changed.
