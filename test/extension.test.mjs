@@ -272,3 +272,49 @@ test('the freshness threshold is short enough to matter and long enough to be us
   assert.ok(ms >= 100, `below ~100ms every call re-captures for nothing, got ${ms}`);
   assert.ok(ms <= 500, `above ~500ms a changed view can still be served stale, got ${ms}`);
 });
+
+/**
+ * The switcher bar is the one piece of UI the extension itself draws, so it is
+ * the one piece uisight cannot audit for us. These run it for real.
+ */
+const gomuluHtml = (() => {
+  const i = ext.indexOf('function gomuluHtml');
+  const j = ext.indexOf('\nconst bilgiHtml', i);
+  return new Function('return ' + ext.slice(i, j).replace('function gomuluHtml', 'function'))();
+})();
+
+const PANELLER = [
+  { port: 5062, url: 'https://kokart.app/ara' },
+  { port: 5109, url: 'https://fiko.sololabs.tr/transactions/723/edit' },
+];
+
+test('the switcher appears only when there is something to switch between', () => {
+  assert.ok(!gomuluHtml(5062, true, [PANELLER[0]]).includes('id="sec"'), 'one panel needs no chooser');
+  assert.ok(!gomuluHtml(5062, true, []).includes('id="sec"'), 'no discovery, no chooser');
+  assert.ok(gomuluHtml(5062, true, PANELLER).includes('id="sec"'), 'two panels need a chooser');
+});
+
+test('every panel you can pick is a frame the CSP will actually load', () => {
+  // Listing only the current port passed review once and still broke: picking
+  // the other panel swapped the iframe src to a blocked origin, and the user
+  // got a blank rectangle with the reason buried in the webview console.
+  const html = gomuluHtml(5062, false, PANELLER);
+  const frameSrc = /frame-src ([^;]+);/.exec(html)?.[1] || '';
+  for (const p of PANELLER) {
+    assert.ok(frameSrc.includes(`localhost:${p.port}`), `port ${p.port} is offered but not allowed`);
+  }
+  assert.ok(html.includes(`value="5062" selected`), 'the port in use must be the one shown');
+});
+
+test('the bar takes its colours from the editor, not from a palette we picked', () => {
+  // A hardcoded dark bar sits as a slab above the panel in a light theme —
+  // exactly the class of defect this tool exists to catch.
+  const css = /<style>([\s\S]*?)<\/style>/.exec(gomuluHtml(5062, true, PANELLER))[1];
+  const kurallar = css.split('}').filter((r) => r.includes('.sw'));
+  assert.ok(kurallar.length >= 3, 'the switcher rules must be present to be checked');
+  for (const kural of kurallar) {
+    for (const [, dekl] of kural.matchAll(/(?:^|;)\s*((?:background|color|border-color)\s*:[^;]+)/g)) {
+      assert.ok(dekl.includes('var(--vscode-'), `nailed-down colour: ${dekl.trim()}`);
+    }
+  }
+});
