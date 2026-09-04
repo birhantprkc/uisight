@@ -51,6 +51,9 @@ if (!/^https?:\/\//.test(targetUrl)) targetUrl = 'http://' + targetUrl;
 
 const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || arg('--port', 5055));
 checkPort(PORT);
+// Tam sayfa goruntusunun tavani (Claude'da ~ genislik*yukseklik/750 token).
+// Ortamdan buyutulebilir: UISIGHT_MAX_IMAGE_TOKENS=4000
+const MAX_IMAGE_TOKENS = Number(process.env.UISIGHT_MAX_IMAGE_TOKENS || 2000);
 const NO_OPEN = argv.includes('--no-open');
 const SINGLE = argv.includes('--single');
 const FORCE_FALLBACK = (process.env.UISIGHT_FALLBACK || process.env.MOBILQA_YEDEK) === '1';
@@ -739,10 +742,40 @@ const server = createServer(async (req, res) => {
     const o = sessions.get(u.searchParams.get('session')) || targetSession({});
     if (!o) { res.writeHead(404); return res.end('no such session'); }
     try {
-      const buf = u.searchParams.get('full') === '1'
-        ? await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css', fullPage: true })
-        : (o.lastFrame ? Buffer.from(o.lastFrame, 'base64') : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' }));
-      res.writeHead(200, { 'content-type': 'image/jpeg', 'x-session': o.id });
+      let buf;
+      let clipped = null;
+      if (u.searchParams.get('full') === '1') {
+        // An image costs the model roughly width*height/750 tokens, and a long
+        // page has no ceiling: a 10,500px article is ~5,800 tokens, a 20,000px
+        // one is ~11,000 — paid again on every later turn of the conversation.
+        //
+        // Downscaling would keep the whole page but make the text unreadable,
+        // which defeats the point of looking. So the height is capped and the
+        // response SAYS what was left out, instead of silently spending or
+        // silently truncating.
+        const size = await o.page.evaluate(() => ({
+          w: Math.ceil(document.documentElement.scrollWidth),
+          h: Math.ceil(document.documentElement.scrollHeight),
+        }));
+        const maxH = Math.max(1, Math.floor((MAX_IMAGE_TOKENS * 750) / Math.max(1, size.w)));
+        if (size.h > maxH) {
+          buf = await o.page.screenshot({
+            // clip ALONE stays inside the viewport (verified: it returned 839px
+            // when 3640 was asked for). fullPage is what lets it reach down.
+            type: 'jpeg', quality: 85, scale: 'css', fullPage: true,
+            clip: { x: 0, y: 0, width: size.w, height: maxH },
+          });
+          clipped = `${maxH}/${size.h}`;
+        } else {
+          buf = await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css', fullPage: true });
+        }
+      } else {
+        buf = o.lastFrame ? Buffer.from(o.lastFrame, 'base64')
+                          : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' });
+      }
+      const head = { 'content-type': 'image/jpeg', 'x-session': o.id };
+      if (clipped) head['x-clipped'] = clipped;
+      res.writeHead(200, head);
       return res.end(buf);
     } catch (e) {
       res.writeHead(500, { 'content-type': 'application/json' });

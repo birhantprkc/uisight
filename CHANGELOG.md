@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.9.0 — 2026-09-04
+
+Someone ran this and watched their plan drain with no way to see where it went.
+So the cost was measured rather than guessed, and the three places it actually
+hides were closed.
+
+**A full-page capture had no ceiling.** A 10,500px page is ~5,800 tokens and a
+20,000px one is ~11,000 — and an image is not paid once, it stays in the
+conversation and is re-sent on every later turn. The height is now capped
+(`UISIGHT_MAX_IMAGE_TOKENS`, default 2000) rather than downscaled, because
+shrinking a page until the text is unreadable defeats the point of looking. The
+response says what it cost and what was left out: `~2000 tokens (412x3640) ·
+showing the top 3640/10508px`.
+
+**Tool definitions are a fixed tax on every request, not a one-off.** Nine tools
+cost ~1,065 tokens whether or not you call them. `UISIGHT_TOOLS=core` keeps the
+four a measuring session needs (~419); an explicit list goes lower (~211). Names
+stay English even under `UISIGHT_LANG=tr`, so a config file does not change
+meaning with the language.
+
+**The cheap path is the CLI, and the README now says so with numbers.** `uisight`
+and `uisight-audit` write a report the model reads once (~150-800 tokens);
+driving the MCP tools screen by screen re-sends the whole conversation at every
+step. The MCP tools are for acting on a page, not for surveying an app.
+
+Nothing here changes what is measured — `inspect` was already returning text and
+excluding the theme baseline, which is where 80% of that response would otherwise
+have gone.
+
 ## 0.8.0 — 2026-09-04
 
 The five checks that were still on the list, three of them measurable from the

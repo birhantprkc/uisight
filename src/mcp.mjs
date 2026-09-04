@@ -94,6 +94,19 @@ const text = (s) => ({ type: 'text', text: typeof s === 'string' ? s : JSON.stri
 const image = (b64) => ({ type: 'image', data: b64, mimeType: 'image/jpeg' });
 
 /** Compact text rendering of inspection results — the heart of token savings. */
+/** Width and height straight out of the JPEG header — no decoder needed. */
+function jpegSize(buf) {
+  for (let i = 2; i < buf.length - 9;) {
+    if (buf[i] !== 0xFF) { i++; continue; }
+    const m = buf[i + 1];
+    if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
+      return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+    }
+    i += 2 + buf.readUInt16BE(i + 2);
+  }
+  return null;
+}
+
 function inspectionText(results) {
   const out = [];
   for (const s of results) {
@@ -134,22 +147,54 @@ const server = new McpServer({ name: 'uisight', version: SURUM });
 const SESSION = z.enum(['desktop', 'mobile']).optional().describe('Default: mobile');
 
 /** Registers a tool under its EN name, or TR name when UISIGHT_LANG=tr. */
+/**
+ * Which tools this server exposes.
+ *
+ * Tool schemas are a FIXED cost: the whole set is sent with every request in the
+ * conversation, not once. Nine tools cost about 1,050 tokens per request, and a
+ * session that only measures pages never calls six of them.
+ *
+ *   UISIGHT_TOOLS=core   goto + inspect + see_screen + status  (~410 tokens)
+ *   UISIGHT_TOOLS=goto,inspect        an explicit list
+ *   unset                everything (default)
+ *
+ * Names are the English ones even when UISIGHT_LANG=tr, so a config file does
+ * not change meaning with the language.
+ */
+const CORE = ['goto', 'inspect', 'see_screen', 'status'];
+const WANTED = (() => {
+  const raw = (process.env.UISIGHT_TOOLS || '').trim().toLowerCase();
+  if (!raw || raw === 'all') return null;                 // null = hepsi
+  if (raw === 'core') return new Set(CORE);
+  return new Set(raw.split(',').map((s) => s.trim()).filter(Boolean));
+})();
+
 function tool(enName, trName, enDesc, trDesc, schema, handler) {
+  if (WANTED && !WANTED.has(enName)) return;
   server.registerTool(TR ? trName : enName, { description: TR ? trDesc : enDesc, inputSchema: schema }, handler);
 }
 
 tool('see_screen', 'ekrani_gor',
   'Screenshot of the live session (~460 tokens). Prefer inspect for measurable problems.',
   'Canli oturumun ekran goruntusu (~460 token). Olculebilir sorunlar icin inspect.',
-  { session: SESSION, full: z.boolean().optional().describe('Full page, costlier') },
+  { session: SESSION, full: z.boolean().optional().describe('Full page: ~10x the cost, capped and reported') },
   async ({ session, full }) => {
     await ensureEngine();
     const r = await req(`/frame?session=${sid(session)}${full ? '&full=1' : ''}`, {}, 30000);
     if (!r.ok) return { content: [text(`could not capture frame: HTTP ${r.status}`)], isError: true };
-    const b64 = Buffer.from(await r.arrayBuffer()).toString('base64');
+    const bytes = Buffer.from(await r.arrayBuffer());
+    const b64 = bytes.toString('base64');
     const d = await getStatus().catch(() => null);
     const o = d?.sessions?.find((x) => x.id === sid(session));
-    return { content: [image(b64), text(`${o?.label || session || 'mobile'} · ${d?.theme} · ${d?.url}`)] };
+
+    // An image stays in the conversation and is re-sent on every later turn, so
+    // its price is paid many times over. Saying what it cost is the same idea as
+    // the rest of this tool: measure it instead of guessing.
+    const dim = jpegSize(bytes);
+    const cost = dim ? ` · ~${Math.round((dim.w * dim.h) / 750)} tokens (${dim.w}x${dim.h})` : '';
+    const cut = r.headers.get('x-clipped');
+    const note = cut ? ` · showing the top ${cut}px — scroll and capture again for the rest` : '';
+    return { content: [image(b64), text(`${o?.label || session || 'mobile'} · ${d?.theme} · ${d?.url}${cost}${note}`)] };
   });
 
 tool('inspect', 'denetle',

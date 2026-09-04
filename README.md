@@ -210,6 +210,45 @@ field it renders must be one the engine produces, and every command in the
 manifest must be registered. That test exists because the pair drifted once and
 failed *silently* — Inspect reported "no findings" on pages full of them.
 
+## What it costs
+
+Someone burned through a plan running this and had no way to see where it went.
+So here are measured numbers, not estimates — a Pixel 7 session on a real site,
+with an image priced the way Claude prices one (width x height / 750):
+
+| | tokens |
+|---|---|
+| `uisight <url>` then read `REPORT.md` | **~800, once** |
+| `uisight-audit` then read `REPORT.md` | **~150-800, once** |
+| MCP `inspect` | ~570 per call |
+| MCP `see_screen` | ~460 per call |
+| MCP `see_screen` with `full` | ~2,000 per call (capped; was ~5,800 uncapped) |
+| tool definitions | ~1,065 **per request** |
+
+Three things follow from that table.
+
+**The CLI is the cheap path and it is not close.** `uisight` and `uisight-audit`
+write a file; the model reads it once. Driving the MCP tools screen by screen
+re-sends the whole conversation on every step, so thirty round trips cost far
+more than one report. Reach for the MCP tools when you need to *act* on a page —
+tap something, change device, look at a specific state — not to survey an app.
+
+**An image is not paid once.** It stays in the conversation and is re-sent on
+every later turn. That is why `inspect` exists and why its output is text: the
+same page costs ~570 tokens measured versus ~460 seen, and the measurement says
+`4.38:1 (threshold 4.5)` where the picture only lets the model guess. A full-page
+capture is now capped (`UISIGHT_MAX_IMAGE_TOKENS`, default 2000) and the response
+tells you what it cost and what was left out, instead of quietly spending.
+
+**Tool definitions are a fixed tax on every request.** Nine tools cost ~1,065
+tokens whether you call them or not:
+
+```jsonc
+// only what a measuring session needs: goto, inspect, see_screen, status
+{ "env": { "UISIGHT_TOOLS": "core" } }        // ~419 tokens
+{ "env": { "UISIGHT_TOOLS": "goto,inspect" } } // ~211 tokens
+```
+
 ## Something didn't work?
 
 Please open an issue — even a one-liner. This is a young project and the fastest way it improves is someone saying "I ran it on X and got Y". Screenshots of the panel or the contents of `REPORT.md` help a lot.

@@ -113,3 +113,21 @@ test('a missing browser is explained, and other errors pass through untouched', 
   const unrelated = new Error('net::ERR_CONNECTION_REFUSED at http://localhost:3000');
   assert.equal(missingBrowser(unrelated, 'chromium'), unrelated, 'unrelated errors must pass through unchanged');
 });
+
+test('UISIGHT_TOOLS trims the schema tax without renaming anything', async () => {
+  // Tool schemas are sent with EVERY request, not once, so a session that only
+  // measures pages pays ~1,065 tokens for six tools it never calls.
+  const all = await listTools({});
+  const core = await listTools({ UISIGHT_TOOLS: 'core' });
+  const two = await listTools({ UISIGHT_TOOLS: 'goto,inspect' });
+
+  assert.ok(all.length > core.length, 'core must be a subset');
+  assert.deepEqual(core.map((t) => t.name).sort(), ['goto', 'inspect', 'see_screen', 'status']);
+  assert.deepEqual(two.map((t) => t.name).sort(), ['goto', 'inspect']);
+
+  // Names are the English ones even in Turkish mode, so a config file does not
+  // change meaning with the language.
+  const trCore = await listTools({ UISIGHT_TOOLS: 'core', UISIGHT_LANG: 'tr' });
+  assert.equal(trCore.length, 4, 'the same four tools, under their Turkish names');
+  assert.ok(trCore.every((t) => !['goto', 'inspect'].includes(t.name)), 'tr mode renames the tools');
+});
