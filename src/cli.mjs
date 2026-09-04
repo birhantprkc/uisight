@@ -136,13 +136,65 @@ export function deviceSettings(pwName) {
 
 /** The checks that run inside the page (color/theme/buttons).
  *  With settings.mobile=false the touch-target (44px) rules are skipped — desktop inspection. */
+/**
+ * Records permission requests, installed before any page code runs.
+ *
+ * A permission asked for with no explanation is accepted by well under half the
+ * people who see it, and the fix is never technical — it is showing why first.
+ * What can be measured is the tell: the request firing during load, before the
+ * person has done anything that would explain it.
+ *
+ * Wrapping is deliberately transparent: the real API is still called, so the
+ * page behaves exactly as it would unobserved.
+ */
+export const PERMISSION_HOOKS = () => {
+  const log = [];
+  Object.defineProperty(window, '__uisightPermissions', { get: () => log, configurable: true });
+
+  // A request is "explained" if the person did something first. Load-time
+  // requests have no gesture behind them by definition.
+  let gestured = false;
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
+    window.addEventListener(ev, () => { gestured = true; }, { capture: true, passive: true });
+  }
+  const note = (api) => log.push({ api, gesture: gestured, atMs: Math.round(performance.now()) });
+
+  try {
+    const real = Notification && Notification.requestPermission;
+    if (real) {
+      Notification.requestPermission = function (...a) { note('notifications'); return real.apply(this, a); };
+    }
+  } catch { /* no Notification in this context */ }
+
+  try {
+    const geo = navigator.geolocation;
+    if (geo) {
+      for (const m of ['getCurrentPosition', 'watchPosition']) {
+        const real = geo[m];
+        if (real) geo[m] = function (...a) { note('location'); return real.apply(this, a); };
+      }
+    }
+  } catch { /* no geolocation */ }
+
+  try {
+    const md = navigator.mediaDevices;
+    if (md && md.getUserMedia) {
+      const real = md.getUserMedia;
+      md.getUserMedia = function (c, ...a) {
+        note(c && c.video ? 'camera' : 'microphone');
+        return real.call(this, c, ...a);
+      };
+    }
+  } catch { /* no mediaDevices */ }
+};
+
 export const INSPECTION_SCRIPT = (settings) => {
   const isMobile = !settings || settings.mobile !== false;
   const result = {
     horizontalOverflow: null, smallTargets: [], tinyText: [], imagesWithoutAlt: 0,
     coveredControls: [], clippedText: [], coveredByFixed: [],
     sameLookingActions: [], darkModeLightPatches: [], mixedLanguage: [], usDates: [],
-    unsafeArea: [],
+    unsafeArea: [], genericErrors: [], destructiveWithoutConfirm: [], eagerPermissions: [],
     invisibleText: [], lowContrast: [], buttonIssues: [], themeSignature: [],
   };
 
@@ -699,10 +751,66 @@ export const INSPECTION_SCRIPT = (settings) => {
     }
   }
 
+  // 13) "Bir hata olustu." Hangi hata? Ne yapmali?
+  //
+  // Gorunur bir hata metni, sorunun ne oldugunu SOYLEMIYORSA kullanicinin
+  // elinde tek secenek kalir: tekrar denemek. Kontrol, hata gibi gorunen kutuyu
+  // bulur ve icinde somut bir sey (alan adi, sayi, "tekrar dene" gibi bir yon)
+  // olup olmadigina bakar.
+  // Kaliplar ASCII yazilir ama ekrandaki metin oyle DEGILDIR: "Bir hata olustu"
+  // gercekte "Bir hata oluştu". Once katla, sonra esle — yoksa kontrol tam da
+  // yakalamasi gereken Turkce mesaji kacirir.
+  const TR_ASCII = { 'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u', 'İ': 'i', 'Ç': 'c', 'Ğ': 'g', 'Ö': 'o', 'Ş': 's', 'Ü': 'u' };
+  const katla = (s) => String(s).replace(/[çğıöşüİÇĞÖŞÜ]/g, (c) => TR_ASCII[c] || c);
+  const GENEL_HATA = /^(bir (sorun|hata) (olustu|var|meydana geldi)|hata|hata olustu|islem basarisiz|basarisiz|bilinmeyen hata|something went wrong|an error occurred|error|failed|oops|unknown error)[.!]?$/i;
+  const hataKaplari = document.querySelectorAll(
+    '[role="alert"], [aria-live="assertive"], .error, .alert-error, [class*="error" i], [class*="hata" i]',
+  );
+  for (const el of hataKaplari) {
+    if (!isVisible(el)) continue;
+    const metin = (el.innerText || '').trim();
+    if (!metin || metin.length > 120) continue;
+    if (!GENEL_HATA.test(katla(metin))) continue;
+    // Yaninda somut bir yon varsa (tekrar dene dugmesi, destek baglantisi) mesaj
+    // tek basina degildir — kullanici ne yapacagini biliyor.
+    const yon = el.querySelector('button, a[href]')
+      || (el.parentElement && el.parentElement.querySelector('button, a[href]'));
+    if (yon && isVisible(yon)) continue;
+    result.genericErrors.push({ sel: describe(el), text: metin.slice(0, 80) });
+    if (result.genericErrors.length >= 5) break;
+  }
+
+  // 14) Sil dugmesi var, onay mekanizmasi yok.
+  //
+  // Dugmeye BASMAK gercekten siler — o yuzden tiklanmaz. Bakilan sey sayfanin
+  // onaylama makinesine sahip olup olmadigi: bir dialog, bir modal, ya da
+  // dugmenin kendisinin bir dialog actigini soylemesi. Hicbiri yoksa geri
+  // donusu olmayan islem tek dokunusla oluyor demektir.
+  const YIKICI = /^(sil|kaldir|hesabi sil|hesabimi sil|iptal et|delete|remove|erase|delete account)\b/i;
+  const onayMakinesi = !!document.querySelector('dialog, [role="alertdialog"], [role="dialog"], [class*="modal" i], [class*="confirm" i], [data-confirm]');
+  if (!onayMakinesi) {
+    for (const el of document.querySelectorAll('button, [role="button"], a[href]')) {
+      if (!isVisible(el)) continue;
+      const etiket = shortLabel(el);
+      if (!etiket || !YIKICI.test(katla(etiket))) continue;
+      if (el.getAttribute('aria-haspopup') === 'dialog') continue;
+      result.destructiveWithoutConfirm.push({ sel: describe(el), text: etiket });
+      if (result.destructiveWithoutConfirm.length >= 4) break;
+    }
+  }
+
+  // 15) Gerekcesiz izin istegi (kanca PERMISSION_HOOKS ile once kuruldu).
+  for (const k of (window.__uisightPermissions || [])) {
+    if (k.gesture) continue;              // once bir sey yapildi: baglam var
+    result.eagerPermissions.push({ api: k.api, atMs: k.atMs });
+  }
+
   capAt('coveredByFixed', 10);
   capAt('sameLookingActions', 6);
   capAt('darkModeLightPatches', 6);
   capAt('usDates', 6);
+  capAt('genericErrors', 5);
+  capAt('destructiveWithoutConfirm', 4);
   return result;
 };
 
@@ -714,6 +822,7 @@ async function canliAc(url, cihazAnahtar) {
   const browser = await engine.launch({ headless: false });
   const ctx = await browser.newContext({ ...deviceSettings(p.pw) });
   const page = await ctx.newPage();
+  await page.addInitScript(PERMISSION_HOOKS);   // sayfa kodundan ONCE
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   console.log(`\n  ${p.label} penceresi acildi: ${url}`);
   console.log('  Browse away. Close the window or hit Ctrl+C when you are done.\n');
@@ -778,6 +887,7 @@ async function tur(o) {
       // their app in Turkish — language switchers and date formats included.
       const ctx = await browser.newContext({ ...deviceSettings(p.pw), colorScheme: theme, ...(o.locale ? { locale: o.locale } : {}) });
       const page = await ctx.newPage();
+      await page.addInitScript(PERMISSION_HOOKS);
 
       for (const path of o.path) {
         const target = new URL(path, o.url).toString();
@@ -903,6 +1013,21 @@ async function tur(o) {
     if (d.usDates?.length) {
       findingCount++;
       lines.push(`- 🟡 **US date format** (${kac(d, 'usDates')}): ` + d.usDates.map((s) => `${s.text} (${s.note})`).join(' · '));
+    }
+    if (d.genericErrors?.length) {
+      findingCount++;
+      lines.push(`- 🟠 **Error message says nothing** (${kac(d, 'genericErrors')}):`);
+      for (const s of d.genericErrors) lines.push(`  - \`${s.sel}\` "${s.text}"`);
+    }
+    if (d.destructiveWithoutConfirm?.length) {
+      findingCount++;
+      lines.push(`- 🔴 **Irreversible action with no confirmation on the page** (${kac(d, 'destructiveWithoutConfirm')}):`);
+      for (const s of d.destructiveWithoutConfirm) lines.push(`  - \`${s.sel}\` "${s.text}"`);
+    }
+    if (d.eagerPermissions?.length) {
+      findingCount++;
+      lines.push(`- 🟠 **Permission requested during load, with nothing explaining it** (${kac(d, 'eagerPermissions')}): `
+        + d.eagerPermissions.map((s) => `${s.api} at ${s.atMs}ms`).join(' · '));
     }
     if (d.imagesWithoutAlt) lines.push(`- ⚪ images without alt: ${d.imagesWithoutAlt}`);
     if (k.console.length) { findingCount++; lines.push(`- 🔴 **Console/JS errors** (${k.console.length}):`); for (const c of k.console.slice(0, 5)) lines.push(`  - ${c.type}: ${c.message}`); }

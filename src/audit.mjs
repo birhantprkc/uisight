@@ -57,6 +57,8 @@ const summarise = (d) => ({
   covered: n(d.coveredControls), clipped: n(d.clippedText), underBar: n(d.coveredByFixed),
   sameLook: n(d.sameLookingActions), darkPatch: n(d.darkModeLightPatches),
   mixedLang: n(d.mixedLanguage), usDate: n(d.usDates), notch: n(d.unsafeArea),
+  vagueError: n(d.genericErrors), noConfirm: n(d.destructiveWithoutConfirm),
+  eagerPerm: n(d.eagerPermissions),
   overflow: d.horizontalOverflow ? 1 : 0,
 });
 const total = (o) => Object.values(o).reduce((a, b) => a + b, 0);
@@ -116,7 +118,25 @@ async function walkRole(role) {
   const kb = await act({ type: 'keyboard-audit', session: 'mobile' });
   const found = (kb.results || [])[0]?.findings || [];
   if (found.length) console.log(`  keyboard: ${found.length} under the keyboard`);
-  return rows.map((r) => ({ ...r, keyboard: found.length }));
+
+  // These two cannot be measured by looking at a page: the network has to
+  // actually drop, and the back button has to actually be pressed. Once per
+  // role, not per page — the behaviour is the app's, not the screen's.
+  const off = await act({ type: 'offline-audit', session: 'mobile' });
+  // A page with no service worker cannot answer offline, and saying so would be
+  // noise. `expected` marks that case.
+  const offline = ((off.results || [])[0]?.findings || []).filter((f) => !f.expected);
+  for (const f of offline) console.log(`  offline: ${f.note}`);
+
+  const bk = await act({ type: 'back-audit', session: 'mobile' });
+  const back = (bk.results || [])[0]?.findings || [];
+  for (const f of back) console.log(`  back button: ${f.note}`);
+
+  return rows.map((r) => ({
+    ...r, keyboard: found.length,
+    offline: offline.map((f) => f.note),
+    back: back.map((f) => f.note),
+  }));
 }
 
 // --- run ---
@@ -151,6 +171,15 @@ for (const r of all) {
   for (const x of r.underBarList) md.push(`- UNDER A FIXED BAR: ${x}`);
   for (const x of r.sameLookList) md.push(`- NO PRIMARY ACTION: ${x}`);
 }
+const davranis = all.filter((r) => (r.offline || []).length || (r.back || []).length);
+if (davranis.length) {
+  md.push('', '## Behaviour (measured once per role, not per page)');
+  for (const r of davranis) {
+    for (const x of r.offline || []) md.push(`- ${r.role} · OFFLINE: ${x}`);
+    for (const x of r.back || []) md.push(`- ${r.role} · BACK BUTTON: ${x}`);
+  }
+}
+
 md.push('', '> Automated checks cannot see design mistakes — look at the panel too.');
 writeFileSync(join(out, 'REPORT.md'), md.join('\n'), 'utf8');
 writeFileSync(join(out, 'report.json'), JSON.stringify(all, null, 2), 'utf8');

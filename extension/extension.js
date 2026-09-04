@@ -247,6 +247,9 @@ function activate(ctx) {
     for (const x of d.mixedLanguage || []) lines.push(`MIXED LANGUAGE — "${x.text}"`);
     for (const x of d.usDates || []) lines.push(`US DATE FORMAT — "${x.text}"`);
     for (const x of d.unsafeArea || []) lines.push(`UNDER THE NOTCH (${x.edge}) — "${x.text}"`);
+    for (const x of d.genericErrors || []) lines.push(`ERROR SAYS NOTHING — "${x.text}"`);
+    for (const x of d.destructiveWithoutConfirm || []) lines.push(`NO CONFIRMATION — "${x.text}"`);
+    for (const x of d.eagerPermissions || []) lines.push(`PERMISSION ASKED ON LOAD — ${x.api} at ${x.atMs}ms`);
     if (d.imagesWithoutAlt) lines.push(`${d.imagesWithoutAlt} image(s) with no alt text`);
 
     // A capped list hides how much was left out; say both numbers.

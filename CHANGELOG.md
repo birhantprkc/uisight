@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.8.0 — 2026-09-04
+
+The five checks that were still on the list, three of them measurable from the
+page and two that are not.
+
+**Errors that say nothing.** "An error occurred." leaves one option: try again
+and hope. Quiet when the message names the problem, and quiet when a retry sits
+next to it.
+
+**Irreversible actions with nothing in the way.** The delete button is never
+clicked — clicking it really deletes. What is measured is whether the page owns
+any confirmation machinery at all: a dialog, a modal, or the button saying it
+opens one. None of it means the loss is one tap away.
+
+**Permissions asked for before there is a reason to say yes.** Hooks installed
+before page code, calling the real API through, recording whether anything the
+person did preceded the request. A load-time request has no context by
+definition.
+
+**Offline** (`offline-audit`) and **back** (`back-audit`) are panel actions,
+because neither can be measured by looking at a page — the network has to drop
+and the button has to be pressed. Offline distinguishes an app that cannot
+answer (no service worker: marked `expected`, filtered out of the audit) from
+one that registers a worker and still shows the browser's error page. Verified
+in both directions on a real app: a finding on the dev server, silence on
+production, where the worker serves a cached page.
+
+**The Turkish text this tool exists to read does not look like its patterns.**
+The error check was written as `olustu` and the screen says `oluştu`, so it
+matched nothing. Text is folded to ASCII before matching now. A check that
+cannot read its own audience's alphabet is worse than no check.
+
+**`setContent` does not run init scripts**, so the permission hook was never
+installed under test and every permission test passed by measuring nothing. The
+tests that need a hook in place now navigate for real.
+
+> Note: `uisight@0.7.0` on npm was published from a working tree mid-edit and
+> carries three of these checks in an untested state. Everything in it passes its
+> tests as of 0.8.0; prefer 0.8.0.
+
 ## 0.7.0 — 2026-09-04
 
 A check nobody displays is a check that does not exist.

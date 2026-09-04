@@ -14,19 +14,24 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { INSPECTION_SCRIPT, PROFILES, deviceSettings } from '../src/cli.mjs';
+import { INSPECTION_SCRIPT, PERMISSION_HOOKS, PROFILES, deviceSettings } from '../src/cli.mjs';
 
 let browser;
 before(async () => { browser = await chromium.launch(); });
 after(async () => { await browser?.close(); });
 
 /** Loads an HTML fixture in the given device profile and returns the findings. */
-async function inspect(html, { profile = 'pixel', theme = 'light' } = {}) {
+async function inspect(html, { profile = 'pixel', theme = 'light', navigate = false } = {}) {
   const p = PROFILES[profile];
   const ctx = await browser.newContext({ ...deviceSettings(p.pw), colorScheme: theme });
   const page = await ctx.newPage();
+  await page.addInitScript(PERMISSION_HOOKS);
   try {
-    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    // setContent does NOT run init scripts, so anything that has to be in place
+    // before page code (the permission hooks) needs a real navigation. Only the
+    // tests that need it pay for it.
+    if (navigate) await page.goto('data:text/html,' + encodeURIComponent(html), { waitUntil: 'load' });
+    else await page.setContent(html, { waitUntil: 'domcontentloaded' });
     return await page.evaluate(INSPECTION_SCRIPT, { mobile: p.mobile !== false, theme });
   } finally {
     await ctx.close();
@@ -433,6 +438,88 @@ test('a desktop viewport has no notch, so the check does not run', async () => {
     { profile: 'desktop' },
   );
   assert.equal((d.unsafeArea || []).length, 0, 'desktop screens have no home indicator');
+});
+
+/**
+ * "An error occurred." Which error? And then what?
+ *
+ * A message that names nothing leaves one option: try again and hope. The check
+ * stays quiet when the box says something concrete, or when it offers a way out.
+ */
+test('an error box that says nothing specific is reported', async () => {
+  const d = await inspect(body('<div role="alert" style="padding:12px">Bir hata oluştu.</div>'));
+  const hit = (d.genericErrors || [])[0];
+  assert.ok(hit, 'a message with no content must be reported');
+  assert.match(hit.text, /hata/i);
+});
+
+test('an error that names the problem is not reported', async () => {
+  const d = await inspect(body(
+    '<div role="alert" style="padding:12px">E-posta adresi geçersiz: @ işareti eksik.</div>'));
+  assert.equal((d.genericErrors || []).length, 0, 'this one tells you what to fix');
+});
+
+test('a vague error that still offers a way out is not reported', async () => {
+  const d = await inspect(body(
+    '<div role="alert" style="padding:12px">Bir hata oluştu.<button>Tekrar dene</button></div>'));
+  assert.equal((d.genericErrors || []).length, 0, 'the person knows what to do next');
+});
+
+/**
+ * Delete with nothing between the tap and the loss.
+ *
+ * The button is never clicked — clicking it really deletes. What is measured is
+ * whether the page owns any confirmation machinery at all.
+ */
+test('a delete button on a page with no confirmation machinery is reported', async () => {
+  const d = await inspect(body('<button>Sil</button>'));
+  const hit = (d.destructiveWithoutConfirm || [])[0];
+  assert.ok(hit, 'an irreversible action one tap away must be reported');
+  assert.equal(hit.text, 'Sil');
+});
+
+test('a delete button on a page that has a dialog is not reported', async () => {
+  const d = await inspect(body(
+    '<button aria-haspopup="dialog">Sil</button><dialog><p>Emin misiniz?</p></dialog>'));
+  assert.equal((d.destructiveWithoutConfirm || []).length, 0, 'the confirmation step exists');
+});
+
+test('a harmless button is not mistaken for a destructive one', async () => {
+  const d = await inspect(body('<button>Kaydet</button><button>Paylaş</button>'));
+  assert.equal((d.destructiveWithoutConfirm || []).length, 0, 'nothing is lost by tapping these');
+});
+
+/**
+ * Permissions asked for before there is any reason to say yes.
+ *
+ * The hook is installed before page code runs and calls the real API through,
+ * so the page behaves exactly as it would unobserved.
+ */
+test('a permission requested during load, with nothing explaining it, is reported', async () => {
+  const d = await inspect(body(
+    '<p>Hoş geldiniz</p><script>try{navigator.geolocation.getCurrentPosition(()=>{},()=>{})}catch(e){}</script>'), { navigate: true });
+  const hit = (d.eagerPermissions || [])[0];
+  assert.ok(hit, 'a load-time request has no context behind it');
+  assert.equal(hit.api, 'location');
+});
+
+test('a permission requested after the person acts is not reported', async () => {
+  const d = await inspect(body(
+    `<button id="b">Yakınımdakileri göster</button>
+     <script>
+       document.getElementById('b').addEventListener('click', () => {
+         try { navigator.geolocation.getCurrentPosition(()=>{},()=>{}) } catch(e) {}
+       });
+       addEventListener('load', () => document.getElementById('b').dispatchEvent(
+         new PointerEvent('pointerdown', { bubbles: true })));
+       addEventListener('load', () => document.getElementById('b').click());
+     </script>`), { navigate: true });
+  assert.equal((d.eagerPermissions || []).length, 0, 'the tap is the explanation');
+});
+
+test('a page that asks for nothing reports nothing', async () => {
+  const d = await inspect(body('<p>Merhaba</p>'), { navigate: true });
+  assert.equal((d.eagerPermissions || []).length, 0);
 });
 
 test('a light panel left behind in dark mode is reported', async () => {

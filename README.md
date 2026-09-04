@@ -134,12 +134,39 @@ Works inside VS Code / Antigravity via *Simple Browser: Show* → `http://localh
 - A row of actions where every one looks identical, so nothing says which is primary — quiet on tabs, menus and filter chips, and only fires when mis-clicking costs something (save, delete, send, pay)
 - Light patches left behind in dark mode
 - Two languages in one screen, and US date formats in a non-US locale
+- An error message that names nothing ("An error occurred.") with no way out beside it
+- An irreversible action — delete, remove, delete account — on a page that owns no confirmation step at all; the button is never clicked, because clicking it really deletes
+- A permission asked for during load, before the person has done anything that would explain it
 - **Theme drift**: elements identical in light *and* dark = likely hard-coded colors
 - Console/JS errors and failed network requests per device
 
 Every check has a false-alarm test next to its detection test. That is not politeness: a tool that cries wolf on every bottom navigation bar gets ignored, and then its real findings go unread too.
 
 And the honest limit: automated checks cannot see *design* mistakes — a collided header measures fine. That's why `see_screen` exists and why the report says "eyeball the PNGs."
+
+## Behaviour you cannot see by looking (offline, back)
+
+Two of these cannot be measured from a rendered page: the network has to
+actually drop, and the back button has to actually be pressed. Both run as panel
+actions, so the audit and the MCP tools share them.
+
+```bash
+# through the panel
+curl -X POST localhost:5055/action -H 'x-uisight-token: ...' \
+     -d '{"type":"offline-audit","session":"mobile"}'
+```
+
+**Offline** drops the connection, reloads, and asks what the person is looking
+at: an explanation, a retry, a spinner that will never finish, or nothing. The
+distinction that keeps it honest is the service worker — a page without one
+*cannot* answer offline, so that result is marked `expected` and the audit
+filters it out. A page that registers a worker and still shows the browser's
+error page is a real finding. The connection is restored in a `finally`, so a
+failure never leaves the session stuck offline.
+
+**Back** follows an internal link and presses back, then checks that the address
+returned to where it started and that the screen is not empty. Coming back to a
+blank page is how "back" turns into "leave the app".
 
 ## Behind the login (`uisight-audit`)
 

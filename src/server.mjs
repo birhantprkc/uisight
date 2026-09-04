@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { exec } from 'node:child_process';
 import { homedir, platform } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { PROFILES, deviceSettings, INSPECTION_SCRIPT, missingBrowser } from './cli.mjs';
+import { PROFILES, deviceSettings, INSPECTION_SCRIPT, PERMISSION_HOOKS, missingBrowser } from './cli.mjs';
 import { signIn, switchRole, recipeFor, accountNames, checkPort } from './login.mjs';
 
 
@@ -145,6 +145,7 @@ async function openSession(id, deviceKey, theme) {
   // No locale is forced — see the same note in cli.mjs. --locale pins one.
   const ctx = await browser.newContext({ ...settings, colorScheme: theme, ...(LOCALE ? { locale: LOCALE } : {}) });
   const page = await ctx.newPage();
+  await page.addInitScript(PERMISSION_HOOKS);   // sayfa kodundan ONCE
   const o = {
     id, deviceKey, profile, ctx, page, cdp: null, fallbackTimer: null,
     viewport: settings.viewport, fullViewport: settings.viewport, keyboard: false,
@@ -335,6 +336,130 @@ async function applyAction(g) {
       const targets = g.session ? [sessions.get(g.session)].filter(Boolean) : [...sessions.values()];
       for (const o of targets) await applyKeyboard(o, !!g.open, true);
       return { ok: true };
+    }
+
+    // Internet gidince ne oluyor: bir aciklama mi, sonsuz donen bir cember mi?
+    //
+    // Bu statik olarak olculemez — aginin gercekten kesilmesi gerekir. Once
+    // kesilir, sayfa yenilenir, sonra sayfanin durumu SOYLEYIP soylemedigine
+    // bakilir. Baglanti her kosulda geri acilir (hata da olsa), yoksa oturum
+    // cevrimdisi kilitli kalir.
+    case 'offline-audit': {
+      const targets = g.session ? [sessions.get(g.session)].filter(Boolean) : [...sessions.values()];
+      const results = [];
+      for (const o of targets) {
+        const before = o.page.url();
+        let findings = [];
+        try {
+          // Sayfanin kendi cevrimdisi tedbiri VAR MI: service worker yoksa
+          // baglanti kesilince tarayicinin hata sayfasi cikar ve bu bir uygulama
+          // hatasi degildir. "Cevrimdisi da calisir" diyen bir PWA icin ise
+          // aynisi tam olarak hatadir. Ayrimi kurmadan verilen bulgu yaniltir.
+          const hasWorker = await o.page.evaluate(async () => {
+            try {
+              if (!navigator.serviceWorker) return false;
+              const regs = await navigator.serviceWorker.getRegistrations();
+              return regs.length > 0;
+            } catch { return false; }
+          }).catch(() => false);
+
+          await o.ctx.setOffline(true);
+          let navFailed = false;
+          await o.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 })
+            .catch(() => { navFailed = true; });
+          await o.page.waitForTimeout(2500);
+
+          const state = await o.page.evaluate(() => ({
+            url: location.href,
+            text: ((document.body && document.body.innerText) || '').trim(),
+          })).catch(() => ({ url: '', text: '' }));
+
+          // Tarayicinin kendi hata sayfasi: govdesi otomasyonda BOS gelir, yani
+          // "ekran bos" demek yanlis olur — sayfa hic yuklenmedi.
+          const browserError = navFailed || state.url.startsWith('chrome-error');
+
+          if (browserError) {
+            findings = [{
+              kind: hasWorker ? 'worker-serves-nothing' : 'no-offline-fallback',
+              note: hasWorker
+                ? 'offline: a service worker is registered but served nothing — the browser error page appeared'
+                : 'offline: nothing cached, the page did not load at all (expected without a service worker)',
+              expected: !hasWorker,
+            }];
+          } else {
+            findings = await o.page.evaluate(() => {
+              const text = ((document.body && document.body.innerText) || '');
+              const fold = text.replace(/[\u00e7\u011f\u0131\u00f6\u015f\u00fc]/g, (c) =>
+                ({ '\u00e7': 'c', '\u011f': 'g', '\u0131': 'i', '\u00f6': 'o', '\u015f': 's', '\u00fc': 'u' }[c] || c));
+              const says = /(internet|baglant|cevrimdisi|offline|no connection|network|tekrar dene|try again|yeniden dene)/i.test(fold);
+              const retry = [...document.querySelectorAll('button, a[href]')]
+                .some((el) => /tekrar|yeniden|retry|try again|reload/i.test((el.innerText || '')));
+              if (says || retry) return [];
+
+              // Donen cember tek basina, bu kontrolun var olma sebebidir: hicbir
+              // sey gelmiyorken bir sey geliyormus gibi soz verir.
+              const spinner = [...document.querySelectorAll('[class*="spin" i],[class*="load" i],[role="progressbar"],svg animate,svg animateTransform')]
+                .some((el) => el.getBoundingClientRect().width > 0);
+              if (spinner) return [{ kind: 'spinner-forever', note: 'offline: a spinner and nothing else' }];
+              if (fold.trim().length < 20) return [{ kind: 'blank', note: 'offline: the app rendered an empty screen' }];
+              return [{ kind: 'silent', note: 'offline: the app never mentions the connection' }];
+            });
+          }
+        } catch (e) {
+          findings = [{ kind: 'error', note: String(e).split('\n')[0].slice(0, 120) }];
+        } finally {
+          // Her kosulda geri ac.
+          try { await o.ctx.setOffline(false); } catch {}
+          await o.page.goto(before, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+        }
+        results.push({ session: o.id, url: before, findings });
+      }
+      return { ok: true, results };
+    }
+
+    // Geri tusu bir onceki ekrana donmeli, uygulamayi kapatmamali.
+    //
+    // Olculen sey: ic bir baglantiya gidip geri dondugunde ADRES basladigi yere
+    // donuyor mu ve ekranda hala bir sey var mi. Cikilan yerin bos donmesi,
+    // kullanicinin "geri" deyince uygulamadan dusmesi demektir.
+    case 'back-audit': {
+      const targets = g.session ? [sessions.get(g.session)].filter(Boolean) : [...sessions.values()];
+      const results = [];
+      for (const o of targets) {
+        const start = o.page.url();
+        const root = new URL(start).origin;
+        const findings = [];
+        try {
+          const link = await o.page.evaluate((r) => {
+            const a = [...document.querySelectorAll('a[href]')]
+              .map((x) => x.href)
+              .find((h) => h.startsWith(r) && h !== location.href && !h.includes('#'));
+            return a || null;
+          }, root);
+          if (!link) {
+            results.push({ session: o.id, url: start, findings: [], note: 'no internal link to follow' });
+            continue;
+          }
+          await o.page.goto(link, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await o.page.waitForTimeout(1200);
+          await o.page.goBack({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+          await o.page.waitForTimeout(1500);
+
+          const back = o.page.url();
+          const body = await o.page.evaluate(() => ((document.body && document.body.innerText) || '').trim().length);
+          if (back.replace(/\/$/, '') !== start.replace(/\/$/, '')) {
+            findings.push({ kind: 'wrong-page', note: `back landed on ${back}, expected ${start}` });
+          } else if (body < 20) {
+            findings.push({ kind: 'blank', note: 'back returned to the right address but an empty screen' });
+          }
+        } catch (e) {
+          findings.push({ kind: 'error', note: String(e).split('\n')[0].slice(0, 120) });
+        } finally {
+          await o.page.goto(start, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+        }
+        results.push({ session: o.id, url: start, findings });
+      }
+      return { ok: true, results };
     }
 
     case 'keyboard-audit': {
