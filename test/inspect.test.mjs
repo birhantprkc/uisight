@@ -298,3 +298,16 @@ test('content genuinely hidden behind a bottom nav IS reported', async () => {
   const hit = (d.coveredByFixed || []).find((x) => x.text.includes('WELCOME'));
   assert.ok(hit, 'text under the bottom nav must be reported');
 });
+
+test('a round floating button is not reported as covered by what shows through its corners', async () => {
+  // A circle inside a 56x56 box leaves ~21% of the box unpainted at the corners.
+  // Sampling those corners returns the text behind and read as "the button is
+  // covered" — a chat FAB over body copy reported 27% covered on four pages.
+  const d = await inspect(body(`
+    <p style="position:absolute;bottom:30px;left:16px;width:340px">
+      Turk Hukuku uygulanir; uyusmazliklarda Istanbul mahkemeleri yetkilidir.
+    </p>
+    <button aria-label="Sohbetler" style="position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#cf4709;color:#fff;border:0;z-index:50">S</button>`));
+  const hit = (d.coveredControls || []).find((x) => x.text.includes('Sohbet') || x.size === '56x56');
+  assert.equal(hit, undefined, 'the FAB paints over the text, it is not covered by it');
+});

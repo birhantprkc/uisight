@@ -407,15 +407,34 @@ export const INSPECTION_SCRIPT = (settings) => {
     if (!isVisible(el)) return;
     const r = el.getBoundingClientRect();
     if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return;
+    const st2 = getComputedStyle(el);
 
     const cols = Math.min(9, Math.max(5, Math.round(r.width / 60)));
     const covers = new Map();
+
+    // A round button's bounding BOX has corners the button does not paint. Sampling
+    // them returns whatever is behind and reads as "this control is covered" — a
+    // floating chat button over body text reported ~27% covered, which is almost
+    // exactly the corner area a circle leaves in its square (1 - pi/4 = 21%).
+    // So for pill/circle shapes, only sample inside the inscribed ellipse.
+    const radius = parseFloat(st2.borderRadius) || 0;
+    const roundish = st2.borderRadius.includes('%')
+      ? parseFloat(st2.borderRadius) >= 40
+      : radius >= Math.min(r.width, r.height) * 0.4;
+    const icerde = (px, py) => {
+      if (!roundish) return true;
+      const nx = (px - (r.left + r.width / 2)) / (r.width / 2);
+      const ny = (py - (r.top + r.height / 2)) / (r.height / 2);
+      return nx * nx + ny * ny <= 0.9;   // kenara teget noktalari da ele
+    };
+
     let sampled = 0, blocked = 0;
     for (let i = 0; i < cols; i++) {
       for (let j = 0; j < 3; j++) {
         const x = r.left + r.width * (0.03 + (0.94 / (cols - 1)) * i);
         const y = r.top + r.height * (0.15 + 0.35 * j);
         if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+        if (!icerde(x, y)) continue;
         sampled++;
         const top = document.elementFromPoint(x, y);
         if (!top || el.contains(top) || top.contains(el)) continue;

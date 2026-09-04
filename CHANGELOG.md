@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3 — 2026-09-04
+
+**A round button is not covered by what shows through its corners.** A circle
+inside a 56x56 box leaves about 21% of the box unpainted, and sampling those
+corners returns whatever is behind. A floating chat button sitting *over* body
+text was reported as 27% *covered by* that text — on four pages, in two roles.
+Sampling now stays inside the inscribed ellipse for pill and circle shapes.
+
+This one is worth naming because the finding was real and the direction was
+backwards: the button did overlap the text. A check that describes a real
+problem incorrectly still costs trust.
+
 ## 0.3.2 — 2026-09-04
 
 **Truncated lists no longer hide the count.** Detail lists are capped so a bad
