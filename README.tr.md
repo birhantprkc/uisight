@@ -30,11 +30,11 @@ Kapsam notu: uisight **web/responsive** içindir. Native iOS/Android uygulama ko
 
 ```bash
 npx uisight https://siteniz.com --theme both     # tek seferlik denetim: PNG + galeri + rapor
-npx uisight-panel http://localhost:3000          # canlı panel: sen gez, AI izlesin (ve tersi)
-npx uisight-audit                                # giriş yapıp her rolü gezer
+npx -y -p uisight uisight-panel http://localhost:3000   # canlı panel: sen gez, AI izlesin (ve tersi)
+npx -y -p uisight uisight-audit                  # giriş yapıp her rolü gezer
 ```
 
-MCP kaydı (Claude Code): `claude mcp add --scope user uisight -- npx -y uisight-mcp`
+MCP kaydı (Claude Code): `claude mcp add --scope user uisight -- npx -y -p uisight uisight-mcp`
 
 Türkçe araç adları için: `UISIGHT_LANG=tr` (`ekrani_gor`, `denetle`, `git`, `tikla`, `yaz`, `kaydir`, `cihaz_degistir`, `durum`, `isaretler`).
 

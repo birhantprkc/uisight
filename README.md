@@ -67,7 +67,7 @@ npx playwright install chromium webkit   # ~300 MB; chromium alone is enough to 
 npx uisight https://yourapp.com --theme both
 
 # live panel: mobile + desktop side by side, you browse, AI watches (and vice versa)
-npx uisight-panel http://localhost:3000
+npx -y -p uisight uisight-panel http://localhost:3000
 ```
 
 The one-shot audit produces a device × theme gallery with findings per card:
@@ -78,13 +78,13 @@ The one-shot audit produces a device × theme gallery with findings per card:
 
 ```bash
 # Claude Code
-claude mcp add --scope user uisight -- npx -y uisight-mcp
+claude mcp add --scope user uisight -- npx -y -p uisight uisight-mcp
 ```
 
 For Cursor / Antigravity / other MCP hosts, add to your MCP config:
 
 ```json
-{ "mcpServers": { "uisight": { "command": "npx", "args": ["-y", "uisight-mcp"] } } }
+{ "mcpServers": { "uisight": { "command": "npx", "args": ["-y", "-p", "uisight", "uisight-mcp"] } } }
 ```
 
 Then just tell your agent: *"look at my app with uisight"*. The panel server starts automatically when needed.
@@ -105,7 +105,7 @@ Turkish tool names available with `UISIGHT_LANG=tr` (`ekrani_gor`, `denetle`, ..
 
 ## The panel (human side)
 
-`npx uisight-panel <url>` opens a browser page at `localhost:5055`:
+`npx -y -p uisight uisight-panel <url>` opens a browser page at `localhost:5055`:
 
 - **Mobile + desktop side by side**, both live, URL-synced
 - Click = tap on that device · wheel = scroll · type after clicking
