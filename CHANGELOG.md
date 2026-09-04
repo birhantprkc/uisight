@@ -15,6 +15,13 @@ discovers the sessions and owns the iframe. Port mapping now covers every
 discovered panel, not just the selected one, or switching would land on a blank
 frame.
 
+Rendered outside VS Code and looked at, it had two faults of the kind this tool
+exists to catch. The colours were nailed down, so in a light-themed editor the
+bar would sit as a dark slab above the panel; it reads `--vscode-*` now, with
+the old values as fallbacks. And `flex:1` stretched the chooser across the full
+width of an editor tab for a twenty-character label, so it is sized to its
+content instead. Three tests run the bar rather than grepping it.
+
 ## 0.24.0 — 2026-09-05
 
 The side panel was watching a port nobody was using.
