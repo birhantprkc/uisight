@@ -204,11 +204,57 @@ async function startServer(output) {
 
 // --- Webview ---
 /** Panel sunucusunu gomen iframe. Ayni HTML hem editor sekmesinde hem yan panelde. */
-function gomuluHtml(p, dar) {
+function gomuluHtml(p, dar, paneller = []) {
+  // Birden fazla panel calisiyorsa hangisine baktigin ANLASILIR olmali ve
+  // degistirmek icin komut paletine gitmek gerekmemeli: dort projeyi paralel
+  // denetlerken bu, kenar cubugunun tek kullanisli halinden cok daha yakini.
+  //
+  // Anahtar paneli TASIYAN cerceveye ait, iceriginе degil — panelleri zaten
+  // eklenti kesfediyor ve iframe'in kaynagini o degistirebiliyor.
+  const hepsi = paneller.length ? paneller : [{ port: p, url: '' }];
+  const kaynaklar = [...new Set(hepsi.map((x) => x.port).concat(p))]
+    .map((q) => `http://localhost:${q} http://127.0.0.1:${q}`).join(' ');
+
+  const kisalt = (u) => {
+    if (!u) return '';
+    try {
+      const x = new URL(u);
+      return (x.host + x.pathname).replace(/\/$/, '').slice(0, dar ? 22 : 46);
+    } catch { return String(u).slice(0, 30); }
+  };
+
+  const secenekler = hepsi.map((x) =>
+    `<option value="${x.port}"${x.port === p ? ' selected' : ''}>${x.port} · ${kisalt(x.url) || 'bos'}</option>`,
+  ).join('');
+
+  const cubuk = hepsi.length > 1 ? `
+  <div class="sw">
+    <select id="sec" title="Which running panel to show">${secenekler}</select>
+    <button id="yenile" title="Rescan for running panels">⟳</button>
+  </div>` : '';
+
   return `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src http://localhost:${p} http://127.0.0.1:${p}; style-src 'unsafe-inline';">
-<style>html,body,iframe{margin:0;padding:0;border:0;width:100%;height:100vh;display:block;background:#1e1f22;}</style>
-</head><body><iframe src="http://localhost:${p}${dar ? '?narrow=1' : ''}" allow="clipboard-read; clipboard-write"></iframe></body></html>`;
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${kaynaklar}; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<style>
+  html,body{margin:0;padding:0;border:0;width:100%;height:100vh;background:#1e1f22;display:flex;flex-direction:column;}
+  iframe{margin:0;padding:0;border:0;width:100%;flex:1;display:block;background:#1e1f22;}
+  .sw{display:flex;gap:6px;align-items:center;padding:4px 6px;background:#2b2d30;border-bottom:1px solid #393b40;}
+  .sw select{flex:1;min-width:0;background:#1e1f22;color:#dfe1e5;border:1px solid #45474d;border-radius:4px;
+    padding:3px 6px;font:11px/1.4 "Segoe UI",system-ui,sans-serif;}
+  .sw button{background:#1e1f22;color:#dfe1e5;border:1px solid #45474d;border-radius:4px;cursor:pointer;
+    padding:3px 8px;font-size:12px;}
+  .sw button:hover{border-color:#4c6fd6;}
+</style>
+</head><body>${cubuk}
+<iframe src="http://localhost:${p}${dar ? '?narrow=1' : ''}" allow="clipboard-read; clipboard-write"></iframe>
+<script>
+  const vs = acquireVsCodeApi();
+  const sec = document.getElementById('sec');
+  if (sec) sec.addEventListener('change', () => vs.postMessage({ type: 'switch', port: Number(sec.value) }));
+  const y = document.getElementById('yenile');
+  if (y) y.addEventListener('click', () => vs.postMessage({ type: 'rescan' }));
+</script>
+</body></html>`;
 }
 
 const bilgiHtml = (m) => `<!doctype html><meta charset="utf-8">
@@ -226,17 +272,41 @@ class SidePanelProvider {
   constructor(ctx, output) { this.ctx = ctx; this.output = output; }
 
   async resolveWebviewView(view) {
-    const p = port();
-    view.webview.options = { enableScripts: true, portMapping: [{ webviewPort: p, extensionHostPort: p }] };
+    this.view = view;
     view.webview.html = bilgiHtml('Panel baslatiliyor...');
+    view.webview.onDidReceiveMessage(async (m) => {
+      if (m.type === 'switch') {
+        await config().update('port', m.port, true);
+        await this.ciz(true);
+      } else if (m.type === 'rescan') {
+        await this.ciz(true);
+      }
+    });
     try {
       const ok = await startServer(this.output);
-      view.webview.html = ok
-        ? gomuluHtml(p, true)
-        : bilgiHtml('Panel sunucusu baslamadi.<br><br>Cikti panelinde <b>Mobil QA</b> kanalina bak.');
+      if (!ok) {
+        view.webview.html = bilgiHtml('Panel sunucusu baslamadi.<br><br>Cikti panelinde <b>uisight</b> kanalina bak.');
+        return;
+      }
+      await this.ciz(false);
     } catch (e) {
       view.webview.html = bilgiHtml(`Panel acilamadi: ${String(e.message || e)}`);
     }
+  }
+
+  /** Kesfet, port eslemesini TUM panellere ac, cubukla birlikte ciz. */
+  async ciz() {
+    const view = this.view;
+    if (!view) return;
+    const p = port();
+    const paneller = await discoverPanels();
+    // Eslemede yalniz secili port olursa digerine gecince iframe bos kalir.
+    const portlar = [...new Set(paneller.map((x) => x.port).concat(p))];
+    view.webview.options = {
+      enableScripts: true,
+      portMapping: portlar.map((q) => ({ webviewPort: q, extensionHostPort: q })),
+    };
+    view.webview.html = gomuluHtml(p, true, paneller);
   }
 }
 
@@ -251,8 +321,24 @@ function showPanel(ctx) {
   });
   panel.onDidDispose(() => { panel = null; refreshStatus(); }, null, ctx.subscriptions);
 
-  panel.webview.html = gomuluHtml(p, false);
+  const ciz = async () => {
+    const q = port();
+    const paneller = await discoverPanels();
+    const portlar = [...new Set(paneller.map((x) => x.port).concat(q))];
+    panel.webview.options = {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      portMapping: portlar.map((r) => ({ webviewPort: r, extensionHostPort: r })),
+    };
+    panel.webview.html = gomuluHtml(q, false, paneller);
+  };
 
+  panel.webview.onDidReceiveMessage(async (m) => {
+    if (m.type === 'switch') { await config().update('port', m.port, true); await ciz(); }
+    else if (m.type === 'rescan') await ciz();
+  }, null, ctx.subscriptions);
+
+  void ciz();
   refreshStatus();
 }
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.25.0 — 2026-09-05
+
+A switcher above the panel, so several projects can be watched from one side bar.
+
+Discovery landed the panel on *a* running session; picking a different one meant
+a trip to the command palette. Auditing four projects at once, that is the
+difference between a side bar you use and one you glance at. The bar lists every
+running panel by port and page, switches on selection, and rescans on demand. It
+only appears when there is more than one — a single panel needs no chooser.
+
+It belongs to the frame rather than the panel content: the extension already
+discovers the sessions and owns the iframe. Port mapping now covers every
+discovered panel, not just the selected one, or switching would land on a blank
+frame.
+
 ## 0.24.0 — 2026-09-05
 
 The side panel was watching a port nobody was using.
