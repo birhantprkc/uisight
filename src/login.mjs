@@ -6,7 +6,8 @@
  * passed. Auditing only the public pages means never looking at the half of the
  * app people actually spend their time in.
  *
- * Three routes, tried in order:
+ * Four routes, tried in order:
+ *   0. `demoButton` in the recipe      (one click, no credentials at all)
  *   1. `code` in the recipe            (the store-review-account pattern)
  *   2. `devCode` in the OTP response   (the demo/dev-mode pattern)
  *   3. `password` field                (classic email + password)
@@ -17,6 +18,7 @@
  * Recipes live in ~/.uisight/accounts.json:
  *   {
  *     "default":  { "loginUrl": "/login", "email": "qa@example.com" },
+ *     "demo.app":  { "loginUrl": "/login", "demoButton": "demoyu incele" },
  *     "myapp.com": {
  *       "accounts": [ { "name": "guide", "email": "..." },
  *                     { "name": "agency", "email": "..." } ],
@@ -98,6 +100,29 @@ export const throwawayEmail = (host) =>
  */
 export async function signIn(page, recipe, log = () => {}) {
   const origin = new URL(page.url()).origin;
+
+  // Route 0: a button that lets someone in without an account at all — "browse
+  // the demo without signing up". Found the hard way: an audit of an app built
+  // that way had to be scripted by hand, because all three credential routes
+  // assume there are credentials. Some apps just have a door.
+  //
+  // Recipe-driven on purpose. Guessing which button opens a demo means one day
+  // clicking "Delete everything" because it happened to say "Devam".
+  if (recipe.demoButton) {
+    await page.goto(origin + (recipe.loginUrl || '/login'), { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await page.waitForTimeout(1500);
+    await dismissConsent(page);
+    const target = recipe.demoButton.startsWith('/') || recipe.demoButton.includes('[')
+      ? page.locator(recipe.demoButton).first()
+      : page.locator(`text=/${recipe.demoButton}/i`).first();
+    if (!(await target.count())) {
+      return { ok: false, step: 'demo-button', message: `no button matching ${recipe.demoButton}` };
+    }
+    await target.click({ timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(4000);
+    return finish(page, '(demo, no account)', 'demoButton');
+  }
+
   const email = recipe.email || (recipe.generateEmail ? throwawayEmail(new URL(origin).hostname) : null);
   if (!email) return { ok: false, step: 'config', message: 'no email, and generateEmail is off' };
 
@@ -123,6 +148,9 @@ export async function signIn(page, recipe, log = () => {}) {
     await page.goto(origin + (recipe.loginUrl || '/login'), { waitUntil: 'domcontentloaded', timeout: 25000 });
     await page.waitForTimeout(1800);
 
+    const consent = await dismissConsent(page);
+    if (consent) log(`consent banner dismissed: "${consent}"`);
+
     const emailField = await page.$('input[type=email], input[name*=mail i], input[placeholder*="@"]');
     if (!emailField) return { ok: false, step: 'email-field', message: 'no email field found' };
     await emailField.fill(email);
@@ -131,7 +159,7 @@ export async function signIn(page, recipe, log = () => {}) {
     const passwordField = await page.$('input[type=password]');
     if (passwordField && recipe.password) {
       await passwordField.fill(recipe.password);
-      await submit(page);
+      await submit(page, log);
       await page.waitForTimeout(4000);
       return finish(page, email, 'password');
     }
@@ -142,7 +170,7 @@ export async function signIn(page, recipe, log = () => {}) {
         .some((b) => !b.disabled && /code|send|continue|next|login|sign|kod|gonder|devam|giris/i.test(b.innerText)),
       { timeout: 12000 },
     ).catch(() => {});
-    await submit(page);
+    await submit(page, log);
     await page.waitForTimeout(3500);
 
     const code = recipe.code || devCode;
@@ -162,7 +190,7 @@ export async function signIn(page, recipe, log = () => {}) {
       await x.fill(code);
     }
     await page.waitForTimeout(600);
-    await submit(page);
+    await submit(page, log);
     await page.waitForTimeout(5000);
     return finish(page, email, recipe.code ? 'fixed-code' : 'devCode');
   } catch (e) {
@@ -172,11 +200,62 @@ export async function signIn(page, recipe, log = () => {}) {
   }
 }
 
-async function submit(page) {
+async function submit(page, log = () => {}) {
   const b = await page.$$('button[type=submit]:not([disabled])');
-  if (b.length) { await b[b.length - 1].click().catch(() => {}); return; }
+  if (b.length) {
+    // A swallowed click is how a cookie banner used to look like "no code field
+    // found": the button was there, the overlay ate the click, and the failure
+    // surfaced three steps later as the wrong diagnosis. Say what happened.
+    const err = await b[b.length - 1].click({ timeout: 5000 }).then(() => null, (e) => String(e).slice(0, 160));
+    if (!err) return;
+    log(`submit click failed: ${err.slice(0, 120)}`);
+    // Second chance without hit-testing: the element is real, something covers it.
+    const forced = await b[b.length - 1].click({ force: true, timeout: 3000 }).then(() => null, () => 'forced click failed');
+    if (!forced) { log('submit went through with force'); return; }
+  }
   await page.keyboard.press('Enter').catch(() => {});
 }
+
+/**
+ * Consent banners sit in a fixed overlay over the page and eat the very click
+ * the sign-in needs. Dismissing one is not "extra automation" — without it the
+ * audit never gets past the login screen on a first visit.
+ */
+export async function dismissConsent(page) {
+  const before = page.url();
+  const accepted = await page.evaluate(() => {
+    const wanted = /kabul|accept|allow|tamam|onayla|agree|got it|anladim|anladım/i;
+    for (const el of document.querySelectorAll('button, [role=button], a')) {
+      const label = (el.textContent || '').trim();
+      if (!wanted.test(label) || label.length > 40) continue;   // uzun metin banner dugmesi degil
+      // Sabitlik EN YAKIN sarmalayicida degil, YUKARIDA bir yerde olur: banner'in
+      // dugmeleri once static bir satir div'inde durur, `fixed` olan onun atasidir.
+      // Yalniz closest()'e bakan surum Noben'in cerez bandini bulamadi ve giris
+      // "kod alani yok" diye basarisiz oldu — yanlis teshis, gercek sebep ortulmus dugme.
+      let fixed = false;
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (/fixed|sticky/.test(getComputedStyle(n).position)) { fixed = true; break; }
+      }
+      if (!fixed) continue;
+      el.click();
+      return label.slice(0, 40);
+    }
+    return null;
+  }).catch(() => null);
+  if (!accepted) return null;
+
+  await page.waitForTimeout(500);
+
+  // Bir <a> "Kabul ediyorum" baglantisi sayfadan CIKARABILIR — o zaman kapattigimiz
+  // sey bir banner degildi ve giris ekranini kaybettik. Geri don; kaybolmus bir
+  // giris sayfasi, kapatilmamis bir banner'dan cok daha kotu.
+  if (page.url() !== before) {
+    await page.goto(before, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+    return null;
+  }
+  return accepted;
+}
+
 
 /** Success means LEAVING the login page. "HTTP 200" would call a wrong code a win. */
 function finish(page, email, route) {

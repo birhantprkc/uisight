@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.14.0 — 2026-09-04
+
+Both of these came from an agent auditing a different application, which is
+exactly where a tool's blind spots are supposed to surface.
+
+**A consent banner defeated sign-in, and lied about why.** The overlay ate the
+submit click; Playwright reported nothing useful; the failure surfaced three
+steps later as "no code field found" — a wrong diagnosis pointing at a field
+that was fine. Banners are now dismissed before the form is touched, and a
+swallowed click says so instead of failing silently downstream.
+
+The dangerous half is the fix itself: clicking things that say "Kabul" can
+navigate away and lose the login page entirely, which is far worse than leaving
+a banner up. So a navigation is walked back, and the helper only touches
+short labels inside a fixed or sticky container.
+
+**Route 0: a door with no lock.** Some apps let you in with one click — "browse
+the demo without signing up" — and all three credential routes assume
+credentials exist, so auditing an app built that way had to be scripted by hand.
+`demoButton` in the recipe covers it. Recipe-driven on purpose: a tool that
+picks its own button will one day pick "Delete everything" because it happened
+to say "Devam".
+
+Six tests for a file that had none.
+
 ## 0.13.0 — 2026-09-04
 
 Four agents auditing four applications were all talking to one panel.
