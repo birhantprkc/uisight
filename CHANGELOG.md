@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.21.0 — 2026-09-04
+
+**A flag that would have been a placebo, and the real cause underneath it.**
+
+A field report asked for  after parallel contexts locked a local
+server twice. Reading the code first: there is no parallelism in the CLI at all —
+device, theme and path loops are all sequential, no  anywhere. The
+flag would have changed nothing and everyone would have believed it helped.
+
+Measured instead: **a single page load fires 20 requests at once.** That is the
+browser own connection pool, not this tool. A backend with a small pool — Prisma
+, for instance — queues all twenty on one connection and
+stalls.  caps them: measured 20 to 4 concurrent, at a cost of
+3.8s to 4.0s.
+
+**A regression test that can actually fail.** The listener bug now has a
+behavioural test: a real server whose three pages each log exactly one error,
+expecting . A structural test — does the loop call  — can
+pass while the behaviour stays broken. Verified by putting the bug back: it fails
+with , and goes green when the fix
+returns. A regression test that cannot fail is worth nothing.
+
+Writing it taught its own lesson:  blocks the test process event
+loop, and the server being measured lives in that process, so the CLI waited
+forever for a reply that could not be sent. Cost: one 180-second timeout.
+
 ## 0.20.0 — 2026-09-04
 
 Three checks the field reports asked for, and one of them took two attempts.
