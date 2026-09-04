@@ -374,6 +374,67 @@ test('links that lead to different pages are navigation, however they are styled
   assert.equal((d.sameLookingActions || []).length, 0, 'different destinations = navigation');
 });
 
+/**
+ * Notch / home indicator. The gate here is precise, and it is what keeps this
+ * check quiet: without `viewport-fit=cover` iOS letterboxes the page and the
+ * insets are all 0, so nothing can be hidden. The finding only exists when a
+ * page asked for the full screen and then never used the padding it got back.
+ */
+test('a fixed bar under the home indicator is reported when the page asked for the full screen', async () => {
+  const d = await inspect(
+    `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+     <body style="margin:0">
+       <div style="position:fixed;bottom:0;left:0;right:0;height:56px;background:#222">
+         <button style="width:100%;height:56px;color:#fff;background:#222;border:0">Devam</button>
+       </div>
+     </body>`,
+    { profile: 'pixel' },
+  );
+  const hit = (d.unsafeArea || [])[0];
+  assert.ok(hit, 'a full-width fixed bar at the bottom edge must be reported');
+  assert.equal(hit.edge, 'bottom');
+});
+
+test('without viewport-fit=cover the notch cannot reach the page, so nothing is reported', async () => {
+  const d = await inspect(
+    `<meta name="viewport" content="width=device-width, initial-scale=1">
+     <body style="margin:0">
+       <div style="position:fixed;bottom:0;left:0;right:0;height:56px;background:#222">
+         <button style="width:100%;height:56px;color:#fff;background:#222;border:0">Devam</button>
+       </div>
+     </body>`,
+    { profile: 'pixel' },
+  );
+  assert.equal((d.unsafeArea || []).length, 0, 'iOS letterboxes the page; the insets are 0');
+});
+
+test('a page that uses the inset it asked for is not reported', async () => {
+  const d = await inspect(
+    `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+     <style>.bar { padding-bottom: env(safe-area-inset-bottom); }</style>
+     <body style="margin:0">
+       <div class="bar" style="position:fixed;bottom:0;left:0;right:0;height:56px;background:#222">
+         <button style="width:100%;height:56px;color:#fff;background:#222;border:0">Devam</button>
+       </div>
+     </body>`,
+    { profile: 'pixel' },
+  );
+  assert.equal((d.unsafeArea || []).length, 0, 'the padding is there — that is the fix');
+});
+
+test('a desktop viewport has no notch, so the check does not run', async () => {
+  const d = await inspect(
+    `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+     <body style="margin:0">
+       <div style="position:fixed;bottom:0;left:0;right:0;height:56px;background:#222">
+         <button style="width:100%;height:56px;color:#fff;background:#222;border:0">Devam</button>
+       </div>
+     </body>`,
+    { profile: 'desktop' },
+  );
+  assert.equal((d.unsafeArea || []).length, 0, 'desktop screens have no home indicator');
+});
+
 test('a light panel left behind in dark mode is reported', async () => {
   const d = await inspect(
     body(`<main style="background:#111;min-height:100vh">
@@ -425,4 +486,25 @@ test('a page entirely in Turkish is not reported as mixed', async () => {
     <p>Rehberinizi bölgeye göre bulun ve rezervasyon yapın. Hesabınızla devam ederek değişiklikleri kaydedin.</p>
     <button>Kaydet</button><button>İptal</button><button>Sil</button>`));
   assert.equal((d.mixedLanguage || []).length, 0, 'a single-language page is consistent');
+});
+
+test('a couple of stray English labels on a long Turkish page are noise, not a second language', async () => {
+  // Measured on a real page: 591 Turkish markers against 7 English ones, all of
+  // them a carousel's "next" label. Reporting that teaches people to skip the
+  // finding, and then the genuinely half-translated screen goes unread too.
+  const turkce = Array.from({ length: 40 }, (_, i) =>
+    `<p>Ürün ${i} için yeni bir kayıt oluşturuldu ve işlem başarıyla tamamlandı.</p>`).join('');
+  const d = await inspect(body(turkce + '<button aria-label="next">next</button><button>Next</button>'));
+  assert.equal((d.mixedLanguage || []).length, 0, 'a 1% minority is noise');
+});
+
+test('a genuinely half-translated screen is still reported', async () => {
+  const d = await inspect(body(`
+    <h1>Yeni kayıt oluştur</h1>
+    <p>Bu işlem için bilgileri giriniz.</p>
+    <button>Save</button><button>Cancel</button><button>Delete</button>
+    <a href="/x">Settings</a><a href="/y">Continue</a>`));
+  const hit = (d.mixedLanguage || [])[0];
+  assert.ok(hit, 'half the controls being English is the case this check exists for');
+  assert.ok(hit.share >= 10, `minority share should be meaningful, got ${hit.share}%`);
 });

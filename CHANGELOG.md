@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.7.0 — 2026-09-04
+
+A check nobody displays is a check that does not exist.
+
+**Four checks were measured on every page and printed on none of them.** The CLI
+report enumerated ten finding types; the engine produced fifteen. Nothing failed
+— REPORT.md was simply shorter than the truth, which is the hardest kind of bug
+to notice, because a short report is exactly what you hope to see. All of them
+now appear, and three tests read the engine's own result initialiser and fail if
+any consumer — report, editor extension, audit summary — leaves a type out. That
+gate found a fifth gap on its first run: the extension had never shown `tinyText`.
+
+**Notch / home indicator** (`unsafeArea`). The gate is what keeps it quiet:
+without `viewport-fit=cover` iOS letterboxes the page and every inset is 0, so
+nothing can be hidden. The finding only exists when a page asked for the full
+screen and then never used the padding it got back — the PWA/TWA mistake exactly.
+
+**"Two languages on one screen" was firing on 1% noise.** A real page had 591
+Turkish markers against 7 English ones, all of them a carousel's "next" label.
+The minority language now has to hold a meaningful share and appear as more than
+one distinct word. The half-translated screen the check exists for still fires.
+
 ## 0.6.0 — 2026-09-04
 
 One copy of the code, and three failures that were silent rather than loud.
@@ -28,6 +50,11 @@ unsafe, and the only clue is "bad port", which reads like a bug in this tool.
 5060/5061 sit next to the default 5055 and are an easy accident — worse, a panel
 bound to one is unreachable from a browser too. Now it says which port and
 suggests another.
+
+**Narrow mode for the side bar** (`?narrow=1`). The extension had been asking for
+`?dar=1`, a flag the server stopped reading during the English migration, so the
+side panel quietly opened the two-column desktop layout in a 300px strip — the
+one thing narrow mode exists to prevent.
 
 The `mobil-qa` fork is retired; nothing was lost (its 10 checks and 16 panel
 actions all have an equivalent here) and the reason it had to go is the

@@ -56,7 +56,7 @@ const summarise = (d) => ({
   touch44: n(d.smallTargets), tiny: n(d.tinyText), noAlt: d.imagesWithoutAlt || 0,
   covered: n(d.coveredControls), clipped: n(d.clippedText), underBar: n(d.coveredByFixed),
   sameLook: n(d.sameLookingActions), darkPatch: n(d.darkModeLightPatches),
-  mixedLang: n(d.mixedLanguage), usDate: n(d.usDates),
+  mixedLang: n(d.mixedLanguage), usDate: n(d.usDates), notch: n(d.unsafeArea),
   overflow: d.horizontalOverflow ? 1 : 0,
 });
 const total = (o) => Object.values(o).reduce((a, b) => a + b, 0);

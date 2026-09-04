@@ -127,6 +127,7 @@ Works inside VS Code / Antigravity via *Simple Browser: Show* → `http://localh
 - Controls painted over by something else — confirmed with `elementFromPoint`, not geometry, and sampled edge to edge so a floating button covering one end of a wide button is caught
 - Controls trapped under a fixed bar, or under the on-screen keyboard (`keyboard-audit` opens the keyboard the way a phone does and re-measures)
 - Horizontal overflow with the offending elements
+- Fixed bars sitting under the notch or home indicator — only when the page asked for the full screen (`viewport-fit=cover`) and then never used the inset it got back; without that flag iOS letterboxes the page and nothing can be hidden
 
 **Does it make sense**
 

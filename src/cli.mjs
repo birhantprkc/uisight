@@ -142,6 +142,7 @@ export const INSPECTION_SCRIPT = (settings) => {
     horizontalOverflow: null, smallTargets: [], tinyText: [], imagesWithoutAlt: 0,
     coveredControls: [], clippedText: [], coveredByFixed: [],
     sameLookingActions: [], darkModeLightPatches: [], mixedLanguage: [], usDates: [],
+    unsafeArea: [],
     invisibleText: [], lowContrast: [], buttonIssues: [], themeSignature: [],
   };
 
@@ -621,9 +622,19 @@ export const INSPECTION_SCRIPT = (settings) => {
     .slice(0, 20000);
   const trIsaret = (govdeMetni.match(/[ığşçöüİĞŞÇÖÜ]|\b(ve|için|ile|bir|bu|olarak|yeni|kaydet|iptal|ara|giriş)\b/gi) || []).length;
   const enIsaret = (govdeMetni.match(/\b(the|and|with|your|save|cancel|search|login|sign in|settings|continue|delete|next|back)\b/gi) || []).length;
-  if (trIsaret >= 5 && enIsaret >= 3) {
-    const ornekler = [...new Set((govdeMetni.match(/\b(the|and|with|your|save|cancel|search|login|sign in|settings|continue|delete|next|back)\b/gi) || []))].slice(0, 6);
-    result.mixedLanguage.push({ trCount: trIsaret, enCount: enIsaret, englishWords: ornekler });
+  // Mutlak sayi tek basina YALAN SOYLER: gercek bir sayfada 591 Turkce isarete
+  // karsi 7 Ingilizce ("next", "Next" — karusel etiketi) "iki dil" sayildi. %1
+  // gurultudur, tutarsizlik degil. Azinlik dilin ANLAMLI bir pay tutmasi ve
+  // birden fazla FARKLI kelimeyle gorunmesi aranir.
+  const ornekler = [...new Set((govdeMetni.match(/\b(the|and|with|your|save|cancel|search|login|sign in|settings|continue|delete|next|back)\b/gi) || []))]
+    .map((w) => w.toLowerCase());
+  const enPay = enIsaret / Math.max(1, trIsaret + enIsaret);
+  if (trIsaret >= 5 && enIsaret >= 3 && enPay >= 0.1 && new Set(ornekler).size >= 2) {
+    result.mixedLanguage.push({
+      trCount: trIsaret, enCount: enIsaret,
+      share: Math.round(enPay * 100),
+      englishWords: [...new Set(ornekler)].slice(0, 6),
+    });
   }
 
   // 11) Amerikan tarih bicimi. GG/AA belirsizligi degil, ay-once olani ara:
@@ -633,6 +644,59 @@ export const INSPECTION_SCRIPT = (settings) => {
     const [a2, b2] = d2.split('/').map(Number);
     if (b2 > 12) result.usDates.push({ text: d2, note: 'AA/GG/YYYY — ikinci parca 12den buyuk' });
     else if (a2 <= 12 && b2 <= 12) result.usDates.push({ text: d2, note: 'belirsiz: AA/GG mi GG/AA mi' });
+  }
+
+  // 12) Centik / ev cubugu: sabit cubuk guvenli alanin ALTINDA kaliyor mu.
+  //
+  // Burada kesin bir kapi var ve yanlis alarmi kendisi eliyor: iOS'ta
+  // `viewport-fit=cover` YOKSA tarayici sayfayi zaten centigin disina yerlestirir
+  // (letterbox) ve `env(safe-area-inset-*)` her yerde 0 doner — yani sorun
+  // OLUSMAZ. Bulgu ancak sayfa `cover` ile tam ekrani istemis AMA karsiliginda
+  // gelen payi hic kullanmamissa gecerlidir. Tam da PWA/TWA'da yasanan hata.
+  if (isMobile) {
+    const meta = document.querySelector('meta[name="viewport"]');
+    const cover = /viewport-fit\s*=\s*cover/i.test(meta ? meta.getAttribute('content') || '' : '');
+    if (cover) {
+      // Sayfanin kendi CSS'i pay kullaniyor mu. Baska kaynaktan gelen stil
+      // sayfasi okunamaz (SecurityError) — okunamayani "kullanmiyor" saymak
+      // yanlis alarm uretir, o yuzden okunamayan varsa kontrol susar.
+      let paySahibi = false;
+      let okunamayan = false;
+      for (const sheet of document.styleSheets) {
+        let kurallar = null;
+        try { kurallar = sheet.cssRules; } catch { okunamayan = true; continue; }
+        if (!kurallar) continue;
+        for (const k of kurallar) {
+          if (k.cssText && k.cssText.includes('safe-area-inset')) { paySahibi = true; break; }
+        }
+        if (paySahibi) break;
+      }
+      // Satir ici stiller de sayilir (Tailwind arbitrary deger cogu zaman boyle biner).
+      if (!paySahibi && document.documentElement.innerHTML.includes('safe-area-inset')) paySahibi = true;
+
+      if (!paySahibi && !okunamayan) {
+        const KENAR = 24;      // ust/alt kenara "yapisik" sayilma toleransi
+        for (const el of document.querySelectorAll('body *')) {
+          const st = getComputedStyle(el);
+          if (st.position !== 'fixed' && st.position !== 'sticky') continue;
+          if (!isVisible(el)) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < innerWidth * 0.5) continue;             // kenar cubugu degil, kucuk rozet
+          const ust = r.top <= KENAR;
+          const alt = r.bottom >= innerHeight - KENAR;
+          if (!ust && !alt) continue;
+          // Icinde gercekten dokunulacak bir sey var mi; suslu bir serit degil.
+          const kontrol = el.querySelector('button, a[href], input, select, [role="button"]');
+          if (!kontrol) continue;
+          result.unsafeArea.push({
+            sel: describe(el), edge: ust ? 'top' : 'bottom',
+            text: shortLabel(kontrol) || (el.innerText || '').trim().slice(0, 40) || '(no text)',
+            note: 'viewport-fit=cover set, safe-area-inset never used',
+          });
+          if (result.unsafeArea.length >= 4) break;
+        }
+      }
+    }
   }
 
   capAt('coveredByFixed', 10);
@@ -814,6 +878,31 @@ async function tur(o) {
       findingCount++;
       lines.push(`- 🟡 **Text cut off by its own box** (${kac(d, 'clippedText')}):`);
       for (const s of d.clippedText) lines.push(`  - \`${s.sel}\` "${s.text}" — ${s.hiddenPx}px hidden (${s.axis})`);
+    }
+    if (d.sameLookingActions?.length) {
+      findingCount++;
+      lines.push(`- 🟠 **No primary action** (every button in the row looks the same, ${kac(d, 'sameLookingActions')}):`);
+      for (const s of d.sameLookingActions) lines.push(`  - \`${s.sel}\` ${s.count} buttons — ${s.labels.join(' / ')}`);
+    }
+    if (d.unsafeArea?.length) {
+      findingCount++;
+      lines.push(`- 🔴 **Under the notch / home indicator** (viewport-fit=cover set, safe-area-inset never used, ${kac(d, 'unsafeArea')}):`);
+      for (const s of d.unsafeArea) lines.push(`  - \`${s.sel}\` ${s.edge} edge — "${s.text}"`);
+    }
+    if (d.darkModeLightPatches?.length) {
+      findingCount++;
+      lines.push(`- 🟠 **Light patches in dark mode** (${kac(d, 'darkModeLightPatches')}):`);
+      for (const s of d.darkModeLightPatches) lines.push(`  - \`${s.sel}\` ${s.size} (${s.share}% of the screen) — ${s.bg}`);
+    }
+    if (d.mixedLanguage?.length) {
+      findingCount++;
+      for (const s of d.mixedLanguage) {
+        lines.push(`- 🟡 **Two languages on one screen**: ${s.trCount} Turkish / ${s.enCount} English markers (${s.share}%) — ${s.englishWords.join(', ')}`);
+      }
+    }
+    if (d.usDates?.length) {
+      findingCount++;
+      lines.push(`- 🟡 **US date format** (${kac(d, 'usDates')}): ` + d.usDates.map((s) => `${s.text} (${s.note})`).join(' · '));
     }
     if (d.imagesWithoutAlt) lines.push(`- ⚪ images without alt: ${d.imagesWithoutAlt}`);
     if (k.console.length) { findingCount++; lines.push(`- 🔴 **Console/JS errors** (${k.console.length}):`); for (const c of k.console.slice(0, 5)) lines.push(`  - ${c.type}: ${c.message}`); }

@@ -91,3 +91,43 @@ test('narrow mode hides the desktop session and caps the card at the viewport', 
   assert.match(server, /body\.narrow \.tel\[data-session="web"\] \{ display:none/);
   assert.match(server, /body\.narrow \.tel \{[^}]*max-width:100%/);
 });
+
+/**
+ * A check nobody displays is a check that does not exist.
+ *
+ * This has now happened twice. Four UX checks shipped in 0.4.0 were measured on
+ * every page and printed in none of them: the CLI report enumerated ten finding
+ * types and the engine produced fifteen. Nothing failed — the report was simply
+ * shorter than the truth, which is the hardest kind of bug to notice, because a
+ * clean report is exactly what you hope to see.
+ *
+ * So the engine's output is the contract, and every consumer has to cover it.
+ */
+const FINDING_TYPES = () => {
+  const cli = readFileSync(join(root, 'src', 'cli.mjs'), 'utf8');
+  const init = cli.match(/const result = \{[\s\S]*?\n  \};/);
+  assert.ok(init, 'could not find the result initialiser');
+  // Arrays are findings; scalars and the theme baseline are not.
+  return [...init[0].matchAll(/([a-zA-Z]+): \[\]/g)]
+    .map((m) => m[1])
+    .filter((k) => k !== 'themeSignature');
+};
+
+test('the CLI report prints every finding type the engine produces', () => {
+  const cli = readFileSync(join(root, 'src', 'cli.mjs'), 'utf8');
+  const report = cli.slice(cli.indexOf('// --- Report ---'));
+  const missing = FINDING_TYPES().filter((k) => !report.includes(`d.${k}`));
+  assert.deepEqual(missing, [], `measured but never written to REPORT.md: ${missing.join(', ')}`);
+});
+
+test('the extension prints every finding type the engine produces', () => {
+  const missing = FINDING_TYPES().filter((k) => !ext.includes(`d.${k}`));
+  assert.deepEqual(missing, [], `measured but never shown in the editor: ${missing.join(', ')}`);
+});
+
+test('the audit summary counts every finding type, or its totals lie', () => {
+  const audit = readFileSync(join(root, 'src', 'audit.mjs'), 'utf8');
+  const summary = audit.slice(audit.indexOf('const summarise'), audit.indexOf('const total'));
+  const missing = FINDING_TYPES().filter((k) => !summary.includes(`d.${k}`));
+  assert.deepEqual(missing, [], `not counted in the audit total: ${missing.join(', ')}`);
+});

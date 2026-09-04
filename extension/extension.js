@@ -241,10 +241,12 @@ function activate(ctx) {
     for (const x of d.sameLookingActions || []) lines.push(`NO PRIMARY ACTION — ${x.labels.join(' / ')}`);
     for (const x of d.lowContrast || []) lines.push(`contrast ${x.ratio}:1 (needs ${x.threshold}) — "${x.text}"`);
     for (const x of d.smallTargets || []) lines.push(`under 44px ${x.size} — "${x.text}"`);
+    for (const x of d.tinyText || []) lines.push(`text below 12px (${x.fontSize}) — "${x.text}"`);
     for (const x of d.clippedText || []) lines.push(`CLIPPED — "${x.text}"`);
     for (const x of d.darkModeLightPatches || []) lines.push(`LIGHT PATCH IN DARK MODE ${x.size} (${x.share}% of the screen) — ${x.sel}`);
     for (const x of d.mixedLanguage || []) lines.push(`MIXED LANGUAGE — "${x.text}"`);
     for (const x of d.usDates || []) lines.push(`US DATE FORMAT — "${x.text}"`);
+    for (const x of d.unsafeArea || []) lines.push(`UNDER THE NOTCH (${x.edge}) — "${x.text}"`);
     if (d.imagesWithoutAlt) lines.push(`${d.imagesWithoutAlt} image(s) with no alt text`);
 
     // A capped list hides how much was left out; say both numbers.
