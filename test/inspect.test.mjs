@@ -228,3 +228,73 @@ test('a normal page with a header and spaced content stays clean on all three', 
   assert.equal((d.clippedText || []).length, 0, 'no false clipping');
   assert.equal((d.coveredByFixed || []).length, 0, 'no false fixed-bar coverage');
 });
+
+test('a modal covering the page beneath it is not reported — that is what a modal does', async () => {
+  const d = await inspect(body(`
+    <main>
+      <button style="width:200px;height:48px">Kaydet</button>
+      <button style="width:200px;height:48px">Iptal</button>
+    </main>
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:flex;align-items:center;justify-content:center">
+      <div style="background:#fff;padding:24px;border-radius:12px">Hos geldin</div>
+    </div>`));
+  assert.equal((d.coveredControls || []).length, 0,
+    'a full-screen overlay is a modal, not a layout bug');
+});
+
+test('a bottom cookie bar covering a floating button IS reported', async () => {
+  const d = await inspect(body(`
+    <div style="position:relative;height:100vh">
+      <button aria-label="whatsapp" style="position:fixed;bottom:24px;right:20px;width:56px;height:56px;border-radius:50%">W</button>
+      <div style="position:fixed;bottom:0;left:0;right:0;height:120px;background:#fff;z-index:9;padding:16px">
+        <button style="width:160px;height:44px">Hepsini Kabul Et</button>
+      </div>
+    </div>`));
+  const hit = (d.coveredControls || []).find((x) => x.size === '56x56');
+  assert.ok(hit, 'a partial cover must still be reported — this is the redios case');
+  assert.ok(hit.percent >= 50, `the bar sits right over it, got ${hit?.percent}%`);
+});
+
+test('the dialog box inside a modal is exempt too, not just the scrim', async () => {
+  // songa: exempting only the scrim left the dialog's own content box reported
+  // as the cover — 10 false findings became 8, all still the same modal.
+  const d = await inspect(body(`
+    <main><button style="width:200px;height:48px">Kaydet</button></main>
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50">
+      <div style="position:absolute;top:20px;left:10px;right:10px;background:#fff;padding:24px">
+        <h2>Hos geldin</h2><p>Uzun bir karsilama metni burada duruyor.</p>
+      </div>
+    </div>`));
+  assert.equal((d.coveredControls || []).length, 0, 'the dialog content box is part of the modal');
+});
+
+test('line-clamped card text is deliberate truncation, not a clipping bug', async () => {
+  // Across 14 live sites, 17 of 18 "clipped text" findings were line-clamp:
+  // recipe cards, quote cards, product blurbs. All of them by design.
+  const d = await inspect(body(`
+    <div style="width:280px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">
+      Havucla yapilan bu pratik tarator, Akdeniz mutfaginin en sevilen mezelerinden biridir
+      ve sofralarda hep ilk biten tabak olur.
+    </div>`));
+  assert.equal((d.clippedText || []).length, 0, 'line-clamp is a design choice');
+});
+
+test('a fixed element that overlaps but sits BEHIND is not reported', async () => {
+  // app.redios.com.tr: a floating button geometrically covered the cookie
+  // banner's buttons while rendering behind it, perfectly readable. Geometry
+  // alone lies; the browser has to say what is actually on top.
+  const d = await inspect(body(`
+    <div style="position:fixed;bottom:24px;right:20px;width:56px;height:56px;z-index:1;background:#25d366">W</div>
+    <div style="position:fixed;bottom:0;left:0;right:0;background:#fff;z-index:40;padding:20px">
+      <button style="width:160px;height:44px">Hepsini Kabul Et</button>
+    </div>`));
+  assert.equal((d.coveredByFixed || []).length, 0, 'the button is on top, nothing hides it');
+});
+
+test('content genuinely hidden behind a bottom nav IS reported', async () => {
+  const d = await inspect(body(`
+    <main style="height:200vh"><p style="position:absolute;bottom:10px;left:16px;width:200px">WELCOME PAKET</p></main>
+    <nav style="position:fixed;bottom:0;left:0;right:0;height:64px;background:#fff;z-index:40">nav</nav>`));
+  const hit = (d.coveredByFixed || []).find((x) => x.text.includes('WELCOME'));
+  assert.ok(hit, 'text under the bottom nav must be reported');
+});

@@ -407,6 +407,28 @@ export const INSPECTION_SCRIPT = (settings) => {
     const pct = Math.round((blocked / sampled) * 100);
     if (pct < 10) return; // a shadow or border grazing the edge is not a cover
     const [name, hit] = [...covers.entries()].sort((a, b) => b[1].n - a[1].n)[0];
+
+    // A modal covering what is behind it is the POINT of a modal, not a defect.
+    // Without this, every open dialog reported every control on the page beneath
+    // it — a check that fires on correct behaviour is a check people learn to
+    // ignore. Testing only the covering element itself is not enough: the scrim
+    // gets exempted but the dialog's own content box then takes its place as the
+    // reported cover (seen on songa: 10 findings became 8, all still the modal).
+    // So walk up: anything inside a near-full-viewport overlay, or inside an
+    // explicit dialog, is part of a modal. A cookie bar or a FAB covers a slice
+    // of the screen and is still reported.
+    const isModalPart = (el) => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (n.getAttribute?.('role') === 'dialog' || n.getAttribute?.('aria-modal') === 'true') return true;
+        const st = getComputedStyle(n);
+        if (st.position === 'fixed' || st.position === 'absolute') {
+          const r2 = n.getBoundingClientRect();
+          if (r2.width * r2.height >= innerWidth * innerHeight * 0.9) return true;
+        }
+      }
+      return false;
+    };
+    if (isModalPart(hit.el)) return;
     result.coveredControls.push({
       sel: describe(el), text: shortLabel(el) || '(no text)',
       size: `${Math.round(r.width)}x${Math.round(r.height)}`,
@@ -426,6 +448,11 @@ export const INSPECTION_SCRIPT = (settings) => {
     if (!cutV && !cutH) return;
     if (st.textOverflow === 'ellipsis' && cutH && !cutV) return;   // deliberate …
     if (/auto|scroll/.test(st.overflowY) && cutV) return;          // a scroll area
+    // line-clamp is deliberate truncation, same as an ellipsis — a card preview
+    // showing two lines of a recipe is the design, not a defect. Across a scan of
+    // 14 live sites, 17 of 18 "clipped" findings were line-clamped card text.
+    const clamp = st.webkitLineClamp || st.lineClamp;
+    if (clamp && clamp !== 'none') return;
     result.clippedText.push({
       sel: describe(el), text: t.slice(0, 40), axis: cutV ? 'vertical' : 'horizontal',
       hiddenPx: cutV ? el.scrollHeight - el.clientHeight : el.scrollWidth - el.clientWidth,
@@ -446,12 +473,22 @@ export const INSPECTION_SCRIPT = (settings) => {
       if (!isVisible(el) || bar.contains(el) || el.contains(bar)) return;
       const r = el.getBoundingClientRect();
       const over = Math.max(0, Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top));
-      if (over > r.height * 0.4 && r.width > 40) {
-        result.coveredByFixed.push({
-          sel: describe(el), text: shortLabel(el) || (el.innerText || '').trim().slice(0, 40),
-          bar: describe(bar), percent: Math.round((over / r.height) * 100),
-        });
-      }
+      if (over <= r.height * 0.4 || r.width <= 40) return;
+
+      // Geometry alone LIES. A fixed element can overlap a box and still be behind
+      // it (lower z-index) or be transparent — on app.redios.com.tr a floating
+      // button geometrically covered the cookie buttons while sitting behind the
+      // banner, perfectly readable. Ask the browser what is actually on top.
+      const x = Math.max(r.left, 0) + Math.min(r.width, innerWidth) / 2;
+      const y = Math.max(r.top, br.top) + over / 2;
+      if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return;
+      const top = document.elementFromPoint(x, y);
+      if (!top || !(bar === top || bar.contains(top))) return;
+
+      result.coveredByFixed.push({
+        sel: describe(el), text: shortLabel(el) || (el.innerText || '').trim().slice(0, 40),
+        bar: describe(bar), percent: Math.round((over / r.height) * 100),
+      });
     });
   }
 

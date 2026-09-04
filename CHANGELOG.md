@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.1 — 2026-09-04
+
+The three checks from 0.3.0, run against 14 live sites, produced 36 findings.
+Verifying them one by one left **3**. The other 33 were four distinct kinds of
+false alarm, and each one is now a test:
+
+- **A modal covering the page beneath it** is what a modal is for. Exempting only
+  the scrim was not enough — the dialog's own content box then took its place as
+  the reported cover, so the rule walks ancestors and exempts anything inside a
+  near-full-viewport overlay or an explicit `role="dialog"`.
+- **`line-clamp` is deliberate truncation**, the same as `text-overflow: ellipsis`.
+  17 of 18 "clipped text" findings were line-clamped recipe, quote and product
+  cards.
+- **Geometry alone lies.** A fixed element can overlap a box and still sit *behind*
+  it. One site's floating button geometrically covered a cookie banner's buttons
+  while rendering behind it, perfectly readable. `coveredByFixed` now asks
+  `elementFromPoint` what is actually on top, the way `coveredControls` already did.
+
+What survived is worth having: a cookie banner covering a hero headline, so every
+first-time visitor sees the product's main promise hidden.
+
+A check that fires on correct behaviour is a check people learn to ignore, so the
+false-alarm tests matter more here than the detection ones.
+
 ## 0.3.0 — 2026-09-04
 
 Three new checks, all of them things a person spots in a screenshot in one second
