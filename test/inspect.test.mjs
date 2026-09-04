@@ -322,6 +322,20 @@ test('flow content the user can simply scroll clear of is NOT reported', async (
   assert.equal(hit, undefined, 'more page below means the user can scroll it clear');
 });
 
+test('a development overlay covering a real control is not a finding', async () => {
+  // Next.js puts a dev-tools button in a <nextjs-portal>. It covered a rating
+  // link and produced a finding on two pages. It does not exist in production.
+  //
+  // The first attempt at this fix exempted the wrong side — targets inside a dev
+  // overlay rather than dev overlays doing the covering — and the finding stayed.
+  // Only re-running the audit caught that.
+  const d = await inspect(body(`
+    <a href="/x" style="position:absolute;top:20px;left:20px">4.9 (44)</a>
+    <nextjs-portal style="position:fixed;top:20px;left:20px;width:120px;height:40px;background:#000"></nextjs-portal>`));
+  const hit = (d.coveredControls || []).find((x) => x.text.includes('4.9'));
+  assert.equal(hit, undefined, 'a dev overlay is not part of the application');
+});
+
 test('a round floating button is not reported as covered by what shows through its corners', async () => {
   // A circle inside a 56x56 box leaves ~21% of the box unpainted at the corners.
   // Sampling those corners returns the text behind and read as "the button is

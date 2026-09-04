@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.21.1 — 2026-09-05
+
+Re-running the audit found that an earlier fix had exempted the wrong side.
+
+Next.js puts its dev-tools button in a `<nextjs-portal>`, and it was covering a
+real link on two pages. 0.19.0 was supposed to have handled that — but it skipped
+targets that sit *inside* a dev overlay, not dev overlays doing the covering. The
+finding survived, the changelog said it was fixed, and nothing would have caught
+it except running the audit again.
+
+Behind the login on the same app, the same pages: 45 findings down to 34 on the
+home page, 23 to 15 on a profile, 14 to 9 on search. The two surviving COVERED
+findings were both this false alarm; the findings section of the report is now
+empty of them.
+
 ## 0.21.0 — 2026-09-04
 
 **A flag that would have been a placebo, and the real cause underneath it.**

@@ -634,6 +634,12 @@ export const INSPECTION_SCRIPT = (settings) => {
         const top = document.elementFromPoint(x, y);
         if (!top || el.contains(top) || top.contains(el)) continue;
 
+        // 🔴 ORTEN de gelistirme katmani olabilir. Ilk duzeltmede yalniz HEDEF
+        // tarafi elenmisti — yanlis yon: Next.js'in dev dugmesi gercek bir
+        // baglantiyi ortuyordu ve bulgu duruyordu. Denetimi tekrar kosturmasak
+        // fark edilmezdi.
+        if (gelistirmeKatmani(top)) continue;
+
         // Akistaki kardes ORTEMEZ — boyama sirasi geregi.
         //
         // Olculdu: yan yana dort 26px dugmede, ornekleme sutunlari genisligin
