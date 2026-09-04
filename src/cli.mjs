@@ -17,12 +17,23 @@ import { join, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exec } from 'node:child_process';
 import { platform } from 'node:os';
-import { checkForUpdate } from './update-check.mjs';
+import { checkForUpdate, currentVersion } from './update-check.mjs';
 
 // --- Device profiles --------------------------------------------------------
 // webkit = the real iOS Safari rendering engine (it does run on Windows).
 // chromium = Android Chrome / WebView.
 // mobile:false profiles are desktop — mobile-only rules (touch targets) are skipped there.
+/**
+ * Cihaz profilleri.
+ *
+ * 🔴 `pw` alani Playwright'in cihaz adi. Disaridan cagiran biri `prof.playwright`
+ * yazdi, `devices[undefined]` oldu ve Playwright sessizce 1280x720 MASAUSTU
+ * viewport'una dustu — 12 sayfa mobil sanilip masaustunde olculdu, tek uyari
+ * cikmadan. Hata ancak ekran goruntusune gozle bakinca anlasildi.
+ *
+ * O yuzden ikisi de kabul ediliyor ve `deviceSettings` bilmedigi ada FIRLATIYOR.
+ * Sessizce yanlis olcmek, hic olcmemekten kotudur.
+ */
 export const PROFILES = {
   'iphone-15': { engine: 'webkit', pw: 'iPhone 15 Pro', label: 'iPhone 15 Pro — iOS Safari engine', mobile: true },
   'iphone-se': { engine: 'webkit', pw: 'iPhone SE', label: 'iPhone SE — small screen (375px)', mobile: true },
@@ -132,7 +143,27 @@ const kac = (d, key) => {
 export function deviceSettings(pwName) {
   const d = devices[pwName];
   if (d) return d;
-  return { ...FALLBACK_DEVICES[pwName] };
+  const f = FALLBACK_DEVICES[pwName];
+  if (f) return { ...f };
+  // Bilinmeyen ad SESSIZCE bos nesne dondurmemeli: Playwright onu "ayar yok"
+  // sayip masaustune duser ve cagiran mobil olctugunu SANIR. Bir kullanici tam
+  // olarak boyle 12 sayfayi yanlis viewport'ta olctu, tek uyari almadan.
+  throw new Error(
+    `unknown device "${pwName}". Pass a Playwright device name, or use profileSettings('iphone-15') `
+    + `with a profile key: ${Object.keys(PROFILES).join(', ')}`,
+  );
+}
+
+/**
+ * Profil ANAHTARINDAN ayarlar — `devices[...]` sozlugune hic dokunmadan.
+ *
+ * Disaridan cagiranin `PROFILES['iphone-15'].pw` alanini bilmesi gerekmesin diye
+ * var: o alani `playwright` sanan biri sessizce masaustunde olcmustu.
+ */
+export function profileSettings(key) {
+  const p = PROFILES[key];
+  if (!p) throw new Error(`unknown profile "${key}". Have: ${Object.keys(PROFILES).join(', ')}`);
+  return { ...deviceSettings(p.pw), _profile: key, _mobile: p.mobile !== false };
 }
 
 /** The checks that run inside the page (color/theme/buttons).
@@ -318,6 +349,13 @@ export const INSPECTION_SCRIPT = (settings) => {
     // Icon fonts: the content is a ligature name ("restaurant"), not real copy — the text-contrast rule does not apply.
     if (/material symbols|material icons|font ?awesome|icomoon|glyphicon|bootstrap-icons|remixicon|lucide|feather/i.test(getComputedStyle(el).fontFamily || '')) continue;
 
+    // Emoji paint themselves. The element's `color` says nothing about how a
+    // ⚖️ or ✅ actually looks, so measuring it produces a contrast number for a
+    // colour that was never used. Icon fonts were already exempt; emoji are the
+    // same problem wearing a different hat.
+    const gorunenMetin = (el.innerText || '').trim();
+    if (gorunenMetin && !/[\p{L}\p{N}]/u.test(gorunenMetin)) continue;   // harf/rakam yok = simge
+
     // On inputs like range/checkbox, .value is never painted as text — it is a control widget.
     if (el.tagName === 'INPUT' && /^(range|checkbox|radio|color|file|hidden|submit|button|image)$/i.test(el.type || '')) continue;
 
@@ -394,7 +432,13 @@ export const INSPECTION_SCRIPT = (settings) => {
     // "8 buton sorunu + 12 dokunma hedefi" 20 sorun gibi okunuyordu, 12 vardi.
     const border = rgb(st.borderTopColor);
     const noBackground = !rgb(st.backgroundColor) || rgb(st.backgroundColor).a < 0.05;
-    if (noBackground && (!border || border.a < 0.05) && el.tagName === 'BUTTON') issues.push('no background and no border — does not read as a button');
+    // Bir sekme cubugundaki sekmenin arka plani ve kenarligi OLMAZ; secili olani
+    // alt cizgiyle belli edilir. Bu kural orada oterse, dogru yapilmis her sekme
+    // cubugu bulgu uretir — ve boyle bir kontrol okunmaz hale gelir.
+    const sekmeIcinde = el.closest('nav, [role="tablist"], [role="navigation"], [role="menubar"]');
+    if (noBackground && (!border || border.a < 0.05) && el.tagName === 'BUTTON' && !sekmeIcinde) {
+      issues.push('no background and no border — does not read as a button');
+    }
     if (el.disabled && parseFloat(st.opacity) > 0.85) issues.push('disabled but visually indistinguishable');
     if (issues.length) result.buttonIssues.push({ sel: describe(el), text: shortLabel(el) || '(no text)', issues });
   }
@@ -477,8 +521,23 @@ export const INSPECTION_SCRIPT = (settings) => {
   // of a wide button leaves the centre clear. So sample a grid, edge to edge.
   document.querySelectorAll('button, a[href], [role="button"], input[type="submit"]').forEach((el) => {
     if (!isVisible(el)) return;
-    const r = el.getBoundingClientRect();
-    if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return;
+
+    // An inline link that wraps onto two lines has a bounding BOX spanning both
+    // lines AND the gap between them — a rectangle covering text that belongs to
+    // neither line. Measured on a real page: a "Terms of Use" link came back "13%
+    // covered" by the link beside it, purely because their boxes overlap in space
+    // neither of them paints. getClientRects() gives the actual line fragments;
+    // the widest one is the piece worth measuring.
+    const parcalar = [...el.getClientRects()].filter((x) => x.width > 0 && x.height > 0);
+    const cokSatirli = parcalar.length > 1;
+    if (cokSatirli && getComputedStyle(el).display.startsWith('inline')) {
+      // Inline ve cok satirli: kutu yalan soyluyor. En genis satir parcasini al.
+      parcalar.sort((a, b) => b.width - a.width);
+    }
+    const r = cokSatirli && getComputedStyle(el).display.startsWith('inline')
+      ? parcalar[0]
+      : el.getBoundingClientRect();
+    if (!r || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return;
     const st2 = getComputedStyle(el);
 
     const cols = Math.min(9, Math.max(5, Math.round(r.width / 60)));
@@ -579,14 +638,33 @@ export const INSPECTION_SCRIPT = (settings) => {
     const st = getComputedStyle(el);
     return (st.position === 'fixed' || st.position === 'sticky') && parseFloat(st.zIndex || 0) >= 0;
   });
+  // Sayfa daha asagi kayabiliyor mu? Alt cubuk icin bu kapi sart: kullanici
+  // kaydirinca oge cubugun ustune cikiyorsa orada KALICI olarak kapali degildir.
+  //
+  // Olculdu: bir uygulamada 17 bulgunun tamami buydu — kap `pb-24` (96px) alt
+  // bosluk veriyor, cubuk `h-14` (56px); sona kaydirinca icerik cubugun ustunde.
+  // Cipler emulatorde elle tiklandi, erisilebiliyorlardi. Bu tek sinif, gercek
+  // bulgu listesinin en buyuk gurultu kaynagiydi.
+  const dahaKayiyor = (window.scrollY + innerHeight) < (document.documentElement.scrollHeight - 4);
+
   for (const bar of bars) {
     const br = bar.getBoundingClientRect();
     if (br.height < 20 || br.height > innerHeight * 0.5) continue;
+    // Ekranin ALTINA yapisik mi? Karar oge bazinda verilir (asagida): akan icerik
+    // kaydirmayla kurtulur, sabit konumlu oge kurtulmaz.
+    const altaYapisik = br.bottom >= innerHeight - 4;
     document.querySelectorAll('h1, h2, h3, p, label, button, a').forEach((el) => {
       if (!isVisible(el) || bar.contains(el) || el.contains(bar)) return;
       const r = el.getBoundingClientRect();
       const over = Math.max(0, Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top));
       if (over <= r.height * 0.4 || r.width <= 40) return;
+
+      // Kaydirma kapisi yalniz AKAN icerik icin gecerli: ogenin kendisi de sabitse
+      // kaydirmak onu cubugun altindan cikarmaz, kalici olarak orada kalir.
+      if (altaYapisik && dahaKayiyor) {
+        const ost = getComputedStyle(el).position;
+        if (ost !== 'fixed' && ost !== 'sticky') return;
+      }
 
       // Geometry alone LIES. A fixed element can overlap a box and still be behind
       // it (lower z-index) or be transparent — on app.redios.com.tr a floating
@@ -805,7 +883,14 @@ export const INSPECTION_SCRIPT = (settings) => {
   // dugmenin kendisinin bir dialog actigini soylemesi. Hicbiri yoksa geri
   // donusu olmayan islem tek dokunusla oluyor demektir.
   const YIKICI = /^(sil|kaldir|hesabi sil|hesabimi sil|iptal et|delete|remove|erase|delete account)\b/i;
-  const onayMakinesi = !!document.querySelector('dialog, [role="alertdialog"], [role="dialog"], [class*="modal" i], [class*="confirm" i], [data-confirm]');
+  // `confirm()` bir onaydir ama DOM'da hicbir izi yoktur. Bir uygulamada dort
+  // satir-ici Sil dugmesi "onaysiz" raporlandi; uceunun de arkasinda
+  // `if (confirm('...')) onDelete(...)` vardi. Tiklamak gercekten siler, o yuzden
+  // deneyerek ogrenilemez — onclick kaynagina ve sayfa metnine bakilir.
+  const kaynaktaConfirm = [...document.querySelectorAll('[onclick]')]
+    .some((el) => /\bconfirm\s*\(/.test(el.getAttribute('onclick') || ''));
+  const onayMakinesi = kaynaktaConfirm
+    || !!document.querySelector('dialog, [role="alertdialog"], [role="dialog"], [class*="modal" i], [class*="confirm" i], [data-confirm]');
   if (!onayMakinesi) {
     for (const el of document.querySelectorAll('button, [role="button"], a[href]')) {
       if (!isVisible(el)) continue;
@@ -851,8 +936,25 @@ async function canliAc(url, cihazAnahtar) {
 // --- Main flow ---------------------------------------------------------------
 async function main() {
   checkForUpdate();          // arka planda, beklenmez
+  const argv = process.argv.slice(2);
+  if (argv.includes('--version') || argv.includes('-v')) {
+    console.log(currentVersion() || 'unknown');
+    return;
+  }
+
   const o = parseArgs(process.argv.slice(2));
   if (o.printHelp || !o.url) { printHelp(); process.exit(o.url ? 0 : 1); }
+
+  // Taninmayan bir bayrak ADRES sanilmamali. `uisight --version` gercekten
+  // `https://--version` adresini taramaya calisti ve
+  // `uisight-outputs/--version-.../` klasoru yaratti. Bilinmeyen bayrak, sessizce
+  // saçma bir is yapmak yerine soylenir.
+  if (o.url.startsWith('-')) {
+    console.error(`  ! unknown option: ${o.url}
+`);
+    printHelp();
+    process.exit(1);
+  }
   if (!/^https?:\/\//.test(o.url)) o.url = 'https://' + o.url;
 
   if (o.live) return canliAc(o.url, o.live);

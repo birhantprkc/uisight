@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.17.0 — 2026-09-04
+
+Two field reports, from agents auditing two different applications. Six real
+bugs in this tool, and the most useful one is a false alarm that made up an
+entire audit's noise.
+
+**A bottom bar is not covering content the user can scroll past.** All 17
+findings of that kind in one run were the same case: a 96px bottom padding
+against a 56px bar, so scrolling to the end put the content above it — the chips
+were tapped by hand on a device and worked. The gate is now per element and
+precise: flow content on a page with room left to scroll is skipped, while an
+element that is itself fixed stays reported, because scrolling never saves that
+one. The old test for this modelled the false alarm rather than the real case;
+it does both now.
+
+**`offline-audit` measured before the service worker took control.** A worker is
+installed on first visit but does not control that page — `controller` is null
+until a reload. So every PWA came back "blank offline" and a genuinely broken
+worker looked identical to a healthy one. Someone fixed their worker and the
+tool kept saying blank. It now reloads and waits for control first.
+
+**`confirm()` is a confirmation.** Four inline delete buttons were reported as
+having no confirmation step; all four sat behind `if (confirm('...'))`. Clicking
+to find out really deletes, so the handler source is read instead.
+
+**Emoji are not text.** A ⚖️ paints itself and ignores the CSS `color` the
+contrast was computed from. Icon fonts were already exempt; emoji are the same
+problem in different clothes.
+
+**A tab is not a button that forgot its background.** The "no background and no
+border" rule fired on every correctly built tab bar.
+
+**A wrapped inline link's bounding box is a lie.** It spans both lines and the
+gap between them — space neither line paints — so a "Terms of Use" link read as
+13% covered by its neighbour. Line fragments are measured instead.
+
+**Two silent failures in this tool's own API.** `deviceSettings()` returned an
+empty object for an unknown name, and Playwright reads that as "no device": a
+caller who wrote `prof.playwright` instead of `prof.pw` measured twelve pages at
+1280x720 believing they were mobile, with no warning at all. It throws now, and
+`profileSettings('iphone-15')` takes a profile key so nobody has to know the
+field name. Separately, `uisight --version` was treated as a URL and started
+scanning `https://--version`; unknown flags are refused rather than guessed at.
+
 ## 0.16.0 — 2026-09-04
 
 Colours are reported as hex, which is shorter and also more honest.

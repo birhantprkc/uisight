@@ -395,6 +395,24 @@ async function applyAction(g) {
             } catch { return false; }
           }).catch(() => false);
 
+          // 🔴 Bir service worker KURULUR ama kurulduğu sayfayı KONTROL ETMEZ:
+          // `navigator.serviceWorker.controller` ilk ziyarette null'dir, kontrol
+          // ikinci ziyarette/reload'da baslar. Bunu beklemeden cevrimdisina
+          // gecmek HER PWA'yi "cevrimdisinda bos" diye raporlar ve gercek
+          // bozukluk ile normal davranis ayirt edilemez hale gelir.
+          //
+          // Bir kullanici SW'sini duzeltti, arac hala "blank" dedi; sebep buydu.
+          if (hasWorker) {
+            const kontrolde = await o.page.evaluate(() => !!navigator.serviceWorker.controller).catch(() => false);
+            if (!kontrolde) {
+              await o.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+              await o.page.waitForFunction(
+                () => navigator.serviceWorker && navigator.serviceWorker.controller != null,
+                { timeout: 15000 },
+              ).catch(() => {});   // devralmadiysa yine olc; sonuc yine de bilgi
+            }
+          }
+
           await o.ctx.setOffline(true);
           let navFailed = false;
           await o.page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 })

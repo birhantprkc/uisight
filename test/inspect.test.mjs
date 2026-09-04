@@ -297,11 +297,29 @@ test('a fixed element that overlaps but sits BEHIND is not reported', async () =
 });
 
 test('content genuinely hidden behind a bottom nav IS reported', async () => {
+  // "Genuinely" means scrolling cannot save it. A FIXED element under a fixed
+  // bar stays there at every scroll position; ordinary flow content does not,
+  // and the test below covers that case.
   const d = await inspect(body(`
-    <main style="height:200vh"><p style="position:absolute;bottom:10px;left:16px;width:200px">WELCOME PAKET</p></main>
+    <main style="height:200vh">uzun sayfa</main>
+    <p style="position:fixed;bottom:10px;left:16px;width:200px;margin:0">WELCOME PAKET</p>
     <nav style="position:fixed;bottom:0;left:0;right:0;height:64px;background:#fff;z-index:40">nav</nav>`));
   const hit = (d.coveredByFixed || []).find((x) => x.text.includes('WELCOME'));
-  assert.ok(hit, 'text under the bottom nav must be reported');
+  assert.ok(hit, 'a fixed element under a fixed bar is trapped at every scroll position');
+});
+
+test('flow content the user can simply scroll clear of is NOT reported', async () => {
+  // Measured on a real app: all 17 findings of this kind were this case. The
+  // container gave 96px of bottom padding against a 56px bar, so scrolling to
+  // the end put the content above the bar — the chips were tapped by hand on a
+  // device and worked. Reporting it made the noisiest category in the run.
+  const d = await inspect(body(`
+    <main style="height:200vh;padding-bottom:96px">
+      <p style="margin-top:calc(100vh - 40px);width:200px">KAYDIRINCA CIKAR</p>
+    </main>
+    <nav style="position:fixed;bottom:0;left:0;right:0;height:56px;background:#fff;z-index:40">nav</nav>`));
+  const hit = (d.coveredByFixed || []).find((x) => x.text.includes('KAYDIRINCA'));
+  assert.equal(hit, undefined, 'more page below means the user can scroll it clear');
 });
 
 test('a round floating button is not reported as covered by what shows through its corners', async () => {
