@@ -173,3 +173,64 @@ test('see_screen exposes scale, and says what it buys', () => {
   assert.match(block, /scale: z\.number\(\)/, 'the agent needs the lever');
   assert.match(block, /quarter the price/, 'and needs to know what it costs');
 });
+
+/**
+ * Port derivation lives in two files and has to agree in both.
+ *
+ * It exists because a fixed 5055 made four projects share one panel: an agent
+ * auditing Lexa could measure Kokart's page, and a `goto` from one yanked
+ * everyone else's panel to its own address. Nothing failed — it just answered
+ * about the wrong app.
+ *
+ * If the extension and the MCP ever compute different ports, the side panel
+ * shows a different application than the one the agent is measuring. That is
+ * the same silent-wrong-answer failure wearing a different hat, so the two
+ * implementations are compared here rather than trusted.
+ */
+const derive = (src, folder) => {
+  let h = 2166136261;
+  for (const c of folder.toLowerCase()) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const blocked = new Set(
+    [...src.matchAll(/BLOCKED_PORTS = new Set\(\[([^\]]+)\]/g)]
+      .flatMap((m) => m[1].split(',').map((n) => Number(n.trim())))
+      .filter(Boolean),
+  );
+  for (let i = 0; i < 120; i++) {
+    const p = 5055 + ((Math.abs(h) + i) % 120);
+    if (!blocked.has(p)) return p;
+  }
+  return 5055;
+};
+
+test('the extension and the MCP derive the same port for the same folder', () => {
+  const mcp = readFileSync(join(root, 'src', 'mcp.mjs'), 'utf8');
+  assert.match(mcp, /2166136261/, 'the MCP must derive a per-project port');
+  assert.match(ext, /2166136261/, 'and the extension must use the same hash');
+
+  // Same constants on both sides: base, span, and the blocked set.
+  for (const src of [mcp, ext]) {
+    assert.match(src, /5055 \+ \(\(Math\.abs\(h\) \+ i\) % 120\)/, 'same base and span');
+    assert.match(src, /5060, 5061/, 'both must skip the ports the URL spec blocks');
+  }
+
+  // And they land on the same number for real folders.
+  for (const folder of ['c:/dev/lexa-dashboard', 'c:/dev/kokart', '/home/x/noben']) {
+    assert.equal(derive(ext, folder), derive(readFileSync(join(root, 'src', 'mcp.mjs'), 'utf8'), folder));
+  }
+});
+
+test('different projects get different ports, and the same project keeps its own', () => {
+  const seen = new Map();
+  for (const f of ['c:/dev/lexa-dashboard', 'c:/dev/kokart', 'c:/dev/fiko', 'c:/dev/noben', 'c:/dev/uisight']) {
+    const p = derive(ext, f);
+    assert.ok(!seen.has(p), `${f} collides with ${seen.get(p)} on ${p}`);
+    seen.set(p, f);
+    assert.equal(derive(ext, f), p, 'the same folder must always get the same port');
+  }
+});
+
+test('the MCP refuses a panel that is serving a different app', () => {
+  const mcp = readFileSync(join(root, 'src', 'mcp.mjs'), 'utf8');
+  assert.match(mcp, /panelMatchesTarget/, 'attaching blindly measures the wrong application');
+  assert.match(mcp, /serving a different app/, 'and it has to say so out loud');
+});

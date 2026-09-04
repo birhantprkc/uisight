@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.13.0 — 2026-09-04
+
+Four agents auditing four applications were all talking to one panel.
+
+Everything defaulted to port 5055, and `ensureEngine` attached to whatever
+answered there without asking which application it was serving. So an agent
+auditing one app could measure another one's page, and a `goto` from any of them
+yanked everyone else's panel to its own address. Nothing failed. It just answered
+about the wrong app — found by someone noticing the side panel was empty for all
+four, not by anything going red.
+
+Two fixes, because one is not enough. The port is now derived from the working
+directory: every project gets its own, the same project always gets the same one,
+and no configuration is involved. And if a panel on that port is serving a
+different host, the tool says so instead of measuring it. The extension derives
+the port the same way from the workspace folder — the constants are written out
+in both files so a test can compare them, since two implementations that drift
+put the side panel on a different application than the agent is measuring.
+
+**Findings are grouped by cause, not listed by symptom.** Measured: 12 contrast
+findings on one page came from 7 colour pairs, six of them the same pair — one
+CSS variable, reported six times. Grouping is both shorter and truer, because the
+fix was always one token, never six elements.
+
+**The button check no longer repeats the touch-target check.** It reported
+`size 23x36 (<44px)` for elements `smallTargets` had already counted, so a page
+with 12 real problems read as 20. Same elements, two lists, one of them removed.
+
+Together these take a real page's `inspect` from ~573 tokens to ~413 — and every
+tool result is re-sent on every later turn, so that discount compounds.
+
 ## 0.12.0 — 2026-09-04
 
 Frames are 44% cheaper, and the reason is measurement rather than a hunch.

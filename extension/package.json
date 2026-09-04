@@ -2,7 +2,7 @@
   "name": "uisight",
   "displayName": "uisight — live mobile panel",
   "description": "See the running app on a phone screen inside your editor, switch device and theme, and measure what a screenshot cannot: contrast, touch targets, covered controls.",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "publisher": "sololabstr",
   "private": false,
   "engines": {
@@ -93,8 +93,8 @@
         },
         "uisight.port": {
           "type": "number",
-          "default": 5055,
-          "description": "Port the panel server listens on. Ports the URL spec blocks (5060, 5061, 6000...) are refused."
+          "default": 0,
+          "description": "Panel port. 0 = derive one from this workspace folder, so several projects can run side by side without sharing a panel. Set a number to pin it."
         },
         "uisight.toolPath": {
           "type": "string",

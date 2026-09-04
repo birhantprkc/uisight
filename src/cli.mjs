@@ -374,7 +374,10 @@ export const INSPECTION_SCRIPT = (settings) => {
       const k = contrast(on.a < 1 ? blend(on, bgc) : on, bgc);
       if (k < 3) issues.push(`text/bg kontrasti ${Math.round(k * 100) / 100}:1`);
     }
-    if (isMobile && (r.height < 44 || r.width < 44)) issues.push(`size ${Math.round(r.width)}x${Math.round(r.height)} (<44px)`);
+    // 44px kurali BURADA DEGIL: smallTargets zaten ayni ogeleri ayni olcutle
+    // sayiyor. Iki yerde raporlamak hem her turda tekrar gonderilen metni
+    // buyutuyor hem de raporu oldugundan kotu gosteriyordu — olculen bir sayfada
+    // "8 buton sorunu + 12 dokunma hedefi" 20 sorun gibi okunuyordu, 12 vardi.
     const border = rgb(st.borderTopColor);
     const noBackground = !rgb(st.backgroundColor) || rgb(st.backgroundColor).a < 0.05;
     if (noBackground && (!border || border.a < 0.05) && el.tagName === 'BUTTON') issues.push('no background and no border — does not read as a button');

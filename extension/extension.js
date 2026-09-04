@@ -10,7 +10,31 @@ let panel = null;
 let statusItem = null;
 
 const config = () => vscode.workspace.getConfiguration('uisight');
-const port = () => config().get('port', 5055);
+/**
+ * Proje basina ayri port — MCP ile AYNI hesap.
+ *
+ * Sabit 5055'te dort proje ayni panele bakiyordu: kenar cubugunda hangi
+ * uygulamayi gordugun, o an hangi projenin panelinin once actigina kaliyordu.
+ * Calisma alani klasorunden turetilen port her projeye kendi panelini verir ve
+ * ayni proje her acilista ayni portu alir.
+ *
+ * Ayarda bir deger varsa o kazanir (0 = otomatik).
+ */
+const BLOCKED_PORTS = new Set([5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697]);
+function derivedPort() {
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || process.cwd();
+  let h = 2166136261;                       // FNV-1a, MCP tarafiyla birebir ayni
+  for (const c of folder.toLowerCase()) {
+    h ^= c.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  for (let i = 0; i < 120; i++) {
+    const p = 5055 + ((Math.abs(h) + i) % 120);
+    if (!BLOCKED_PORTS.has(p)) return p;
+  }
+  return 5055;
+}
+const port = () => config().get('port', 0) || derivedPort();
 const toolPath = () => config().get('toolPath', '');
 
 // --- Sunucu ile konusma ---

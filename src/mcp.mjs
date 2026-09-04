@@ -30,7 +30,36 @@ import { checkPort } from './login.mjs';
 import { checkForUpdate, agentUpdateNotice, currentVersion, latestVersion } from './update-check.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
-const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || 5055);
+/**
+ * Proje basina ayri port — yapilandirma olmadan.
+ *
+ * Herkes 5055'i paylasinca dort projede paralel calisan dort ajan ayni panele
+ * baglaniyordu: biri digerinin sayfasini olcuyor, `goto` diyen digerlerinin
+ * panelini kendi adresine cekiyordu. Hata vermiyor, sadece yanlis cevap
+ * veriyordu.
+ *
+ * Calisma dizininden turetilen port bunu kendiliginden cozer: her proje kendi
+ * portunu alir, ayni proje her acilista AYNI portu alir. UISIGHT_PORT verilmisse
+ * o kazanir.
+ */
+// Ayni hesap eklentide de var (extension/extension.js). Iki taraf ayni sayiyi
+// bulmak ZORUNDA: bulamazlarsa kenar cubugu, ajanin olctugunden BASKA bir
+// uygulamayi gosterir. Bu yuzden sabitler ikisinde de duz yazili — test iki
+// dosyayi metin olarak karsilastirabilsin diye.
+const BLOCKED_PORTS = new Set([5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697]);
+function portForProject() {
+  let h = 2166136261;                       // FNV-1a
+  for (const c of process.cwd().toLowerCase()) {
+    h ^= c.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  for (let i = 0; i < 120; i++) {
+    const p = 5055 + ((Math.abs(h) + i) % 120);
+    if (!BLOCKED_PORTS.has(p)) return p;
+  }
+  return 5055;
+}
+const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || portForProject());
 checkPort(PORT);
 const BASE = `http://127.0.0.1:${PORT}`;
 const TR = (process.env.UISIGHT_LANG || '').toLowerCase() === 'tr';
@@ -70,8 +99,37 @@ const isReady = async (ms) => {
   return !!d?.sessions?.length;
 };
 let child = null;
+/**
+ * Hedefi bu projenin hedefiyle uyusuyor mu diye sorar.
+ *
+ * Ayni porta baska bir projenin paneli oturmussa, ona baglanmak sessizce YANLIS
+ * uygulamayi olcmek demektir. Sessiz yanlis cevap, gurultulu hatadan kotudur.
+ */
+async function panelMatchesTarget() {
+  const want = process.env.UISIGHT_URL || process.env.MOBILQA_URL;
+  if (!want) return true;                     // hedef belirtilmemis: karisma
+  try {
+    const d = await getStatus();
+    if (!d || !d.url) return true;
+    return new URL(d.url).host === new URL(want).host;
+  } catch { return true; }                    // okuyamiyorsak engelleme
+}
+
 async function ensureEngine() {
-  try { if (await isReady(1500)) return; } catch {}
+  try {
+    if (await isReady(1500)) {
+      if (!(await panelMatchesTarget())) {
+        const d = await getStatus().catch(() => null);
+        throw new Error(
+          `port ${PORT} is serving a different app (${d?.url}). Another project's panel is on this port. `
+          + `Set UISIGHT_PORT to a free port for this project, or stop that panel.`,
+        );
+      }
+      return;
+    }
+  } catch (e) {
+    if (String(e.message || '').includes('different app')) throw e;
+  }
   // Restart the panel if it went away: a one-shot flag used to leave the tool permanently
   // dead after a crash. No shell:true — the argv array is passed through safely by Node
   // (a shell would turn UISIGHT_URL into an injection surface).
@@ -108,6 +166,30 @@ function jpegSize(buf) {
   return null;
 }
 
+/**
+ * Aynı kök nedenden doğan bulgulari tek satirda topla.
+ *
+ * Olculdu: bir sayfadaki 12 kontrast bulgusunun ARKASINDA 7 renk cifti vardi ve
+ * altisi tek bir cifti tekrarliyordu. Yani ekranda 12 sorun degil, degistirilecek
+ * tek bir CSS degiskeni var. Gruplamak hem her turda yeniden gonderilen metni
+ * kisaltiyor hem de dogru olani soyluyor: semptomlari degil kaynagi.
+ */
+function group(list, keyOf, render) {
+  const m = new Map();
+  for (const x of list || []) {
+    const k = keyOf(x);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(x);
+  }
+  return [...m.values()].sort((a, b) => b.length - a.length).map(render);
+}
+
+/** "a", "b" +3 — iki ornek, gerisi sayi. Uc ornek okuyani ikna etmiyor, sadece uzatiyor. */
+const examples = (g, pick, len = 28) => {
+  const s = g.slice(0, 2).map((y) => `"${String(pick(y)).slice(0, len)}"`).join(', ');
+  return g.length > 2 ? `${s} +${g.length - 2}` : s;
+};
+
 function inspectionText(results) {
   const out = [];
   for (const s of results) {
@@ -119,12 +201,25 @@ function inspectionText(results) {
       for (const x of (d.horizontalOverflow.overflowing || []).slice(0, 4)) out.push(`    <${x.label} class="${x.className}"> right edge ${x.right}px`);
     }
     for (const x of d.invisibleText || []) out.push(`  INVISIBLE TEXT ${x.ratio}:1 — ${x.sel} "${x.text}" (text ${x.color} / bg ${x.bg})`);
-    for (const x of d.lowContrast || []) out.push(`  low contrast ${x.ratio}:1 (threshold ${x.threshold}) ${x.fontSize} — "${x.text}"`);
-    for (const x of d.buttonIssues || []) out.push(`  BUTTON ${x.sel} "${x.text}" → ${x.issues.join(' · ')}`);
+    // Renk cifti basina tek satir: 12 bulgu 7 cifte, cogu zaman tek degiskene iner.
+    out.push(...group(d.lowContrast, (x) => `${x.color}|${x.bg}`, (g) => {
+      const x = g[0];
+      const n = g.length > 1 ? ` x${g.length}` : '';
+      return `  low contrast ${x.ratio}:1 (needs ${x.threshold})${n} — ${x.color} on ${x.bg} — ${examples(g, (y) => y.text)}`;
+    }));
+    out.push(...group(d.buttonIssues, (x) => x.issues.join('|'), (g) => {
+      const n = g.length > 1 ? ` x${g.length}` : '';
+      return `  BUTTON${n} ${g[0].issues.join(' · ')} — ${examples(g, (y) => y.text, 20)}`;
+    }));
     for (const x of d.coveredControls || []) out.push(`  COVERED ${x.sel} "${x.text}" ${x.size} — ${x.percent}% under ${x.coveredBy} "${x.coveredByText}"`);
     for (const x of d.coveredByFixed || []) out.push(`  UNDER FIXED BAR ${x.sel} "${x.text}" — ${x.percent}% behind ${x.bar}`);
     for (const x of d.clippedText || []) out.push(`  CLIPPED ${x.sel} "${x.text}" — ${x.hiddenPx}px hidden (${x.axis})`);
-    for (const x of (d.smallTargets || []).slice(0, 8)) out.push(`  touch target below 44px ${x.size} — "${x.text}"`);
+    // Ayni olcu tekrar tekrar cikar (bir satirdaki dort ikon ayni kutuyu paylasir);
+    // olcu basina tek satir hem kisa hem daha dogru okunuyor.
+    out.push(...group(d.smallTargets, (x) => x.size, (g) => {
+      const n = g.length > 1 ? ` x${g.length}` : '';
+      return `  touch target below 44px${n} ${g[0].size} — ${examples(g, (y) => y.text, 20)}`;
+    }));
     if (d.tinyText?.length) out.push(`  text below 12px (${d.tinyText.length}): ` + d.tinyText.map((m) => `${m.fontSize} "${m.text}"`).join(' · '));
     if (d.imagesWithoutAlt) out.push(`  images without alt: ${d.imagesWithoutAlt}`);
     // A "clean" claim must cover EVERY finding type. When a new check is added and
