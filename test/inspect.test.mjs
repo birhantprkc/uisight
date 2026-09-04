@@ -540,6 +540,126 @@ test('a page that asks for nothing reports nothing', async () => {
   assert.equal((d.eagerPermissions || []).length, 0);
 });
 
+/**
+ * Content clipped by a container, with no way to scroll to it.
+ *
+ * The leaf-text check skips anything with children, so the real defect one level
+ * up was invisible: a six-column table inside an `overflow-hidden` box showed
+ * three columns on a phone and the rest simply did not exist. Three pages had
+ * the same pattern and the engine found none of them; a person spotted it in a
+ * screenshot.
+ *
+ * The discriminator is clean, which is why this check can be trusted: the same
+ * box with `overflow-x: auto` is fine, because the user can reach the rest.
+ */
+test('a wide table inside an overflow-hidden box is reported', async () => {
+  const d = await inspect(body(`
+    <div style="width:300px;overflow:hidden">
+      <table style="width:900px"><tr><td>Ad</td><td>Sınıflandırma</td><td>H ifadeleri</td></tr></table>
+    </div>`));
+  const hit = (d.clippedContainer || [])[0];
+  assert.ok(hit, 'content the user cannot reach must be reported');
+  assert.ok(hit.hiddenPx > 100, `expected a real overflow, got ${hit?.hiddenPx}`);
+});
+
+test('the same table in a scrollable box is not reported', async () => {
+  const d = await inspect(body(`
+    <div style="width:300px;overflow-x:auto">
+      <table style="width:900px"><tr><td>Ad</td><td>Sınıflandırma</td><td>H ifadeleri</td></tr></table>
+    </div>`));
+  assert.equal((d.clippedContainer || []).length, 0, 'the user can scroll to it — that is the fix');
+});
+
+test('a box whose content fits is not reported', async () => {
+  const d = await inspect(body(
+    `<div style="width:300px;overflow:hidden"><p>kısa metin</p></div>`));
+  assert.equal((d.clippedContainer || []).length, 0);
+});
+
+test('a decorative clipped strip with no text is not reported', async () => {
+  const d = await inspect(body(`
+    <div aria-hidden="true" style="width:200px;overflow:hidden">
+      <div style="width:800px;height:40px;background:linear-gradient(90deg,#f00,#00f)"></div>
+    </div>`));
+  assert.equal((d.clippedContainer || []).length, 0, 'nothing to read means nothing is lost');
+});
+
+/**
+ * "Empty" shown while the data is still on its way.
+ *
+ * One page said TOTAL 0 with 45 documents in the database. Another showed
+ * "0 items" in the heading and "0 / 0 shown" in the counter while a spinner
+ * turned in the search box — the library had 5,055 records. For a moment the
+ * user is told the database is empty. If both are on screen at once, what is
+ * displayed is not the truth, it is an intermediate state.
+ */
+test('a zero count next to a running spinner is reported', async () => {
+  const d = await inspect(body(`
+    <div class="animate-spin" style="width:20px;height:20px;border:2px solid #333"></div>
+    <p>0 kayıt bulunamadı</p>`));
+  assert.ok((d.loadingButEmpty || [])[0], 'the user is being told something untrue');
+});
+
+test('a zero count with nothing loading is a real empty state', async () => {
+  const d = await inspect(body('<p>0 kayıt bulunamadı</p>'));
+  assert.equal((d.loadingButEmpty || []).length, 0, 'an honest empty state is not a bug');
+});
+
+test('a spinner with real content beside it is not reported', async () => {
+  const d = await inspect(body(`
+    <div role="progressbar" style="width:20px;height:20px"></div>
+    <p>45 belge listeleniyor</p>`));
+  assert.equal((d.loadingButEmpty || []).length, 0, 'loading while showing data is normal');
+});
+
+/**
+ * Text vanishing behind a control.
+ *
+ * There was a gap between two checks: one looks for controls being covered, the
+ * other only at fixed bars. The real defect was neither — a `justify-between`
+ * row that did not wrap on a phone, so the description paragraph slid under the
+ * upload button. Nothing was fixed and no control was covered, so nobody saw it.
+ *
+ * This is a place where a false alarm is cheap to create, so the gates are
+ * narrow: two of three sample points, and the thing on top has to be a control.
+ * A decorative layer over text is often intentional; a button over text is not.
+ */
+test('a paragraph sliding under a button is reported', async () => {
+  const d = await inspect(body(`
+    <div style="position:relative;width:360px">
+      <p style="position:absolute;top:0;left:0;width:340px;margin:0">
+        SDS dosyanızı yükleyin, sistem otomatik ayrıştırsın
+      </p>
+      <button style="position:absolute;top:0;left:60px;width:200px;height:40px;background:#cf4709;color:#fff;border:0">
+        SDS yükle
+      </button>
+    </div>`));
+  const hit = (d.textUnderControl || [])[0];
+  assert.ok(hit, 'text a user cannot read must be reported');
+  assert.match(hit.controlText, /SDS/);
+});
+
+test('text beside a button, not under it, is not reported', async () => {
+  const d = await inspect(body(`
+    <div style="display:flex;gap:16px;width:360px">
+      <p style="margin:0;flex:1">SDS dosyanızı yükleyin, sistem ayrıştırsın</p>
+      <button style="background:#cf4709;color:#fff;border:0;padding:10px">SDS yükle</button>
+    </div>`));
+  assert.equal((d.textUnderControl || []).length, 0, 'a normal row is not a collision');
+});
+
+test('a decorative layer over text is not a control and is not reported', async () => {
+  const d = await inspect(body(`
+    <div style="position:relative;width:360px">
+      <p style="position:absolute;top:0;left:0;width:340px;margin:0">
+        Türk hukuku uygulanır; uyuşmazlıklarda İstanbul mahkemeleri yetkilidir
+      </p>
+      <div aria-hidden="true" style="position:absolute;top:0;left:0;width:340px;height:40px;
+        background:linear-gradient(#fff0,#fff)"></div>
+    </div>`));
+  assert.equal((d.textUnderControl || []).length, 0, 'a fade overlay is a design choice');
+});
+
 test('a light panel left behind in dark mode is reported', async () => {
   const d = await inspect(
     body(`<main style="background:#111;min-height:100vh">

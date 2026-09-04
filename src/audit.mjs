@@ -58,6 +58,8 @@ const summarise = (d) => ({
   sameLook: n(d.sameLookingActions), darkPatch: n(d.darkModeLightPatches),
   mixedLang: n(d.mixedLanguage), usDate: n(d.usDates), notch: n(d.unsafeArea),
   vagueError: n(d.genericErrors), noConfirm: n(d.destructiveWithoutConfirm),
+  clippedBox: n(d.clippedContainer), emptyLoading: n(d.loadingButEmpty),
+  textHidden: n(d.textUnderControl),
   eagerPerm: n(d.eagerPermissions),
   overflow: d.horizontalOverflow ? 1 : 0,
 });

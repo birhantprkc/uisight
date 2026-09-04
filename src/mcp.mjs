@@ -231,6 +231,9 @@ function inspectionText(results) {
     }));
     for (const x of d.coveredControls || []) out.push(`  COVERED ${x.sel} "${x.text}" ${x.size} — ${x.percent}% under ${x.coveredBy} "${x.coveredByText}"`);
     for (const x of d.coveredByFixed || []) out.push(`  UNDER FIXED BAR ${x.sel} "${x.text}" — ${x.percent}% behind ${x.bar}`);
+    for (const x of d.clippedContainer || []) out.push(`  CLIPPED, NO SCROLL ${x.hiddenPx}px in ${x.sel} — "${x.text}"`);
+    for (const x of d.textUnderControl || []) out.push(`  TEXT BEHIND A CONTROL — "${x.text}" behind "${x.controlText}"`);
+    for (const x of d.loadingButEmpty || []) out.push(`  EMPTY WHILE STILL LOADING — "${x.text}"`);
     for (const x of d.clippedText || []) out.push(`  CLIPPED ${x.sel} "${x.text}" — ${x.hiddenPx}px hidden (${x.axis})`);
     // Ayni olcu tekrar tekrar cikar (bir satirdaki dort ikon ayni kutuyu paylasir);
     // olcu basina tek satir hem kisa hem daha dogru okunuyor.

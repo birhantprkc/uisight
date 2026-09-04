@@ -232,6 +232,7 @@ export const INSPECTION_SCRIPT = (settings) => {
     coveredControls: [], clippedText: [], coveredByFixed: [],
     sameLookingActions: [], darkModeLightPatches: [], mixedLanguage: [], usDates: [],
     unsafeArea: [], genericErrors: [], destructiveWithoutConfirm: [], eagerPermissions: [],
+    clippedContainer: [], loadingButEmpty: [], textUnderControl: [],
     invisibleText: [], lowContrast: [], buttonIssues: [], themeSignature: [],
   };
 
@@ -989,7 +990,119 @@ export const INSPECTION_SCRIPT = (settings) => {
   capAt('sameLookingActions', 6);
   capAt('darkModeLightPatches', 6);
   capAt('usDates', 6);
+  // 16) Kapsayicisina sigmayan ve KAYDIRILAMAYAN icerik.
+  //
+  // `clippedText` yalniz yaprak metin ogelerine bakiyor (`el.children.length`
+  // varsa atliyor), ama gercek kusur cogu zaman bir ust katmandadir: alti sutunlu
+  // bir tablo `overflow-hidden` bir kutuda; telefonda uc sutun gorunuyor,
+  // digerleri YOK ve kaydirma da yok. Uc sayfada ayni desen vardi ve motor
+  // hicbirini bulmadi — insan ekran goruntusune bakarken yakaladi.
+  //
+  // Ayirt edici temiz: ayni oge `overflow-x: auto|scroll` olsaydi kullanici
+  // kaydirabilirdi ve sorun olmazdi. Kirpan sey `hidden`.
+  for (const el of document.querySelectorAll('div, section, main, aside, table, ul, ol')) {
+    if (!isVisible(el) || dekoratif(el) || gelistirmeKatmani(el)) continue;
+    const st = getComputedStyle(el);
+    const ox = st.overflowX;
+    if (ox !== 'hidden' && ox !== 'clip') continue;          // auto/scroll: kullanici kaydirir
+    const r = el.getBoundingClientRect();
+    if (r.width < 80 || r.height < 24) continue;             // rozet/ikon kutusu degil
+
+    // `scrollWidth` YANLIS OLCU. Olculdu: bir sayfada 2.193px "gizli" cikti ve
+    // sebebi mutlak konumlu, animasyonlu zemin lekeleriydi — okunacak metin hic
+    // kirpilmiyordu. Bir digeri kayan logo seridiydi; icerik zaten gorus alanina
+    // giriyor. Ikisi de scrollWidth'i sisiriyor.
+    //
+    // Dogru soru: AKISTAKI, metin tasiyan bir cocuk kabin disina tasiyor mu?
+    let enFazla = 0;
+    let ornek = '';
+    for (const c of el.children) {
+      const cs = getComputedStyle(c);
+      if (cs.position === 'absolute' || cs.position === 'fixed') continue;   // akista degil
+      if (cs.animationName !== 'none' && cs.transform !== 'none') continue;  // kayan serit
+      const metin = (c.innerText || '').trim();
+      if (!metin) continue;                                   // suslu kutu: kaybolan bilgi yok
+      const cr = c.getBoundingClientRect();
+      const disari = Math.round(cr.right - r.right);
+      if (disari > enFazla) { enFazla = disari; ornek = metin; }
+    }
+    if (enFazla <= 24) continue;                              // yuvarlama payi degil, gercek kayip
+
+    result.clippedContainer.push({
+      sel: describe(el),
+      hiddenPx: enFazla,
+      size: `${Math.round(r.width)}x${Math.round(r.height)}`,
+      text: ornek.replace(/\s+/g, ' ').slice(0, 60),
+    });
+    if (result.clippedContainer.length >= 6) break;
+  }
+
+  // 17) "Bos" diyor ama hala yukluyor.
+  //
+  // Bir sayfa "TOPLAM 0" gosterirken veritabaninda 45 belge vardi; baska birinde
+  // baslik "0 madde", sayac "0 / 0 gosteriliyor" derken ARAMA KUTUSUNDA donen bir
+  // spinner vardi ve kutuphanede 5.055 kayit. Kullanici bir an "veritabani bos"
+  // goruyor. Ikisi ayni anda ekrandaysa, gosterilen sey hakikat degil ara durumdur.
+  {
+    const yukleniyor = [...document.querySelectorAll(
+      '[class*="spin" i], [class*="skeleton" i], [role="progressbar"], [aria-busy="true"]',
+    )].some((el) => isVisible(el) && !dekoratif(el));
+    if (yukleniyor) {
+      const BOS = /(^|\s)0(\s|$)|bulunamad|sonuc yok|kayit yok|bos|empty|no results|nothing here/i;
+      for (const el of document.querySelectorAll('p, span, div, h1, h2, h3, td')) {
+        if (el.children.length || !isVisible(el) || dekoratif(el)) continue;
+        const metin = (el.innerText || '').trim();
+        if (!metin || metin.length > 60 || !BOS.test(metin)) continue;
+        result.loadingButEmpty.push({ sel: describe(el), text: metin.slice(0, 60) });
+        if (result.loadingButEmpty.length >= 3) break;
+      }
+    }
+  }
+
+  // 18) Akistaki metin bir kontrolun ARKASINA giriyor.
+  //
+  // `coveredControls` kontrolun ortulmesine bakiyor, `coveredByFixed` yalniz
+  // sabit cubuklara. Aradaki bosluk gercek bir kusuru kaciriyordu: `flex
+  // items-center justify-between` bir satir telefonda sarmayinca aciklama
+  // paragrafi "SDS yukle" dugmesinin altina giriyordu — ne kontrol ortulu ne de
+  // ortan sey sabit.
+  //
+  // Ayni yerde yanlis alarm riski yuksek oldugu icin uc kapi var: gorunur metin,
+  // gercekten ustte olan bir KONTROL, ve dekoratif olmayan bir ortucu.
+  for (const el of document.querySelectorAll('p, span, h1, h2, h3, h4, label, li')) {
+    if (el.children.length || !isVisible(el) || dekoratif(el) || gelistirmeKatmani(el)) continue;
+    const metin = (el.innerText || '').trim();
+    if (metin.length < 8) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 40 || r.height < 8) continue;
+    if (r.bottom < 0 || r.top > innerHeight) continue;
+
+    // Metnin kendi alaninda uc nokta: sol, orta, sag ucte bir.
+    let ortuk = 0;
+    let ortucu = null;
+    for (const pay of [0.25, 0.5, 0.75]) {
+      const x = r.left + r.width * pay;
+      const y = r.top + r.height / 2;
+      if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+      const ust = document.elementFromPoint(x, y);
+      if (!ust || ust === el || el.contains(ust) || ust.contains(el)) continue;
+      // Yalniz KONTROL sayilir: dekoratif bir katman metnin uzerinde olabilir ve
+      // sorun olmayabilir; tiklanabilir bir sey ise metin gercekten kayboluyor.
+      const k = ust.closest('button, a[href], [role="button"], input, select, textarea');
+      if (!k || dekoratif(k)) continue;
+      ortuk++;
+      ortucu = k;
+    }
+    if (ortuk < 2) continue;                 // tek nokta kenar payi olabilir
+    result.textUnderControl.push({
+      sel: describe(el), text: metin.slice(0, 50),
+      control: describe(ortucu), controlText: shortLabel(ortucu) || '(no text)',
+    });
+    if (result.textUnderControl.length >= 5) break;
+  }
+
   capAt('genericErrors', 5);
+  capAt('clippedContainer', 6);
   capAt('destructiveWithoutConfirm', 4);
   return result;
 };
@@ -1239,6 +1352,21 @@ async function tur(o) {
     if (d.usDates?.length) {
       findingCount++;
       lines.push(`- 🟡 **US date format** (${kac(d, 'usDates')}): ` + d.usDates.map((s) => `${s.text} (${s.note})`).join(' · '));
+    }
+    if (d.clippedContainer?.length) {
+      findingCount++;
+      lines.push(`- 🔴 **Content clipped with no way to scroll** (${kac(d, 'clippedContainer')}):`);
+      for (const s of d.clippedContainer) lines.push(`  - \`${s.sel}\` ${s.size}, ${s.hiddenPx}px hidden — "${s.text}"`);
+    }
+    if (d.textUnderControl?.length) {
+      findingCount++;
+      lines.push(`- 🔴 **Text disappearing behind a control** (${kac(d, 'textUnderControl')}):`);
+      for (const s of d.textUnderControl) lines.push(`  - "${s.text}" behind \`${s.control}\` "${s.controlText}"`);
+    }
+    if (d.loadingButEmpty?.length) {
+      findingCount++;
+      lines.push(`- 🟠 **Says "empty" while still loading** (${kac(d, 'loadingButEmpty')}): `
+        + d.loadingButEmpty.map((s) => `"${s.text}"`).join(' · '));
     }
     if (d.genericErrors?.length) {
       findingCount++;

@@ -292,6 +292,9 @@ function activate(ctx) {
     for (const x of d.mixedLanguage || []) lines.push(`MIXED LANGUAGE — "${x.text}"`);
     for (const x of d.usDates || []) lines.push(`US DATE FORMAT — "${x.text}"`);
     for (const x of d.unsafeArea || []) lines.push(`UNDER THE NOTCH (${x.edge}) — "${x.text}"`);
+    for (const x of d.clippedContainer || []) lines.push(`CLIPPED, NO SCROLL ${x.hiddenPx}px — "${x.text}"`);
+    for (const x of d.textUnderControl || []) lines.push(`TEXT BEHIND A CONTROL — "${x.text}" behind "${x.controlText}"`);
+    for (const x of d.loadingButEmpty || []) lines.push(`EMPTY WHILE LOADING — "${x.text}"`);
     for (const x of d.genericErrors || []) lines.push(`ERROR SAYS NOTHING — "${x.text}"`);
     for (const x of d.destructiveWithoutConfirm || []) lines.push(`NO CONFIRMATION — "${x.text}"`);
     for (const x of d.eagerPermissions || []) lines.push(`PERMISSION ASKED ON LOAD — ${x.api} at ${x.atMs}ms`);

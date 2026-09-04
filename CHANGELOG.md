@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.20.0 — 2026-09-04
+
+Three checks the field reports asked for, and one of them took two attempts.
+
+**Content clipped with no way to scroll to it.** The leaf-text check skips
+anything with children, so the real defect one level up was invisible: a
+six-column table inside an `overflow-hidden` box showed three columns on a phone
+and the rest did not exist. Three pages had the pattern and the engine found
+none; a person spotted it in a screenshot. The discriminator is clean — the same
+box with `overflow-x: auto` is fine, because the content is reachable.
+
+The first version used `scrollWidth`, passed its tests, and then produced four
+false alarms on the first real page: 2,193px "hidden" caused by absolutely
+positioned animated background blobs, and a marquee whose child scrolls into view
+by design. `scrollWidth` is the wrong measure. The question is whether an
+in-flow, text-bearing child extends past the box — nothing else is lost
+information. Zero false alarms across four real sites now, with the detection
+test still passing.
+
+**"Empty" shown while the data is still loading.** One page said TOTAL 0 with 45
+documents in the database; another showed "0 items" and "0 / 0 shown" while a
+spinner turned, over a library of 5,055 records. For a moment the user is told
+the database is empty. Both on screen at once means what is displayed is an
+intermediate state, not the truth.
+
+**Text disappearing behind a control.** A gap between two existing checks: one
+looks for covered controls, the other only at fixed bars. A `justify-between` row
+that did not wrap put a description paragraph under an upload button — nothing
+fixed, no control covered, nobody saw it. Narrow gates, because a false alarm is
+cheap to create here: two of three sample points, and the thing on top has to be
+a control. A decorative layer over text is usually deliberate; a button is not.
+
 ## 0.19.0 — 2026-09-04
 
 A fourth field report, which independently confirmed the listener bug with a
