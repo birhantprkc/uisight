@@ -30,6 +30,27 @@ import { checkPort } from './login.mjs';
 import { checkForUpdate, agentUpdateNotice, currentVersion, latestVersion } from './update-check.mjs';
 import { fingerprint, fingerprints } from './findings.mjs';
 
+// A person who types `uisight-mcp --help` otherwise gets a stdio server sitting
+// silently on their terminal waiting for JSON-RPC. Printing here is safe: this
+// only runs on an explicit flag, and it exits before the transport opens.
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  console.log(`uisight-mcp - the MCP server your agent connects to.
+
+Not usually run by hand. Register it instead:
+
+  claude mcp add --scope user uisight -- npx -y -p uisight uisight-mcp
+
+or, for other hosts:
+
+  { "command": "npx", "args": ["-y", "-p", "uisight", "uisight-mcp"] }
+
+  UISIGHT_PORT   panel port (default: derived from the working directory)
+  UISIGHT_URL    page the sessions open on first
+  UISIGHT_TOOLS  comma-separated subset of tools, to spend fewer tokens
+  UISIGHT_LANG   tr for Turkish tool names`);
+  process.exit(0);
+}
+
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 /**
  * Proje basina ayri port — yapilandirma olmadan.

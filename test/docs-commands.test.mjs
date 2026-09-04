@@ -50,3 +50,20 @@ test('the Smithery listing starts the server the same way the docs do', () => {
   const p = parcalar[parcalar.indexOf('-p') + 1];
   assert.equal(p, PAKET, `Smithery would run "npx ${parcalar.join(' ')}" — that package does not exist`);
 });
+
+/**
+ * Every bin should answer --help. Three of the four did not: they ignored the
+ * flag and went ahead. `uisight-audit --help` started a real sign-in against
+ * whatever panel was on 5055, and `uisight-panel --help` launched a browser.
+ */
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const calistir = promisify(execFile);
+
+for (const [ad, dosya] of Object.entries(pkg.bin)) {
+  test(`${ad} --help explains itself instead of running`, async () => {
+    const { stdout } = await calistir(process.execPath, [join(root, dosya), '--help'], { timeout: 25000 });
+    assert.ok(stdout.trimStart().startsWith(ad), `${ad} --help must start by naming itself, got: ${JSON.stringify(stdout.slice(0, 40))}`);
+    assert.ok(stdout.length > 80, `${ad} --help printed almost nothing`);
+  });
+}

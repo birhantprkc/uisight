@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.26.0 — 2026-09-05
+
+The command in the README did not work.
+
+`uisight-mcp`, `uisight-panel` and `uisight-audit` are bin names inside the
+`uisight` package, not packages. So the headline instruction for registering the
+MCP server — `npx -y uisight-mcp` — failed with E404 for every new reader, and
+so did the panel and audit lines, in both languages, and the Smithery start
+command. Only the extension's own README had it right. Both forms were run
+against the live registry to be sure: the documented one 404s, `npx -y -p
+uisight uisight-mcp` starts the server.
+
+That is also a supply-chain trap. The docs sent people to a name nobody owned,
+so whoever published `uisight-mcp` would have run code on the machine of anyone
+following them — and the instruction is in the git history and in every
+published tarball's README, so fixing the text does not retire it. The three
+names are now taken by four-line packages that depend on `uisight` and hand off
+to it, which closes the hole and makes the short form work as it always read.
+
+Along the way: `--help` did nothing on three of the four commands. It fell
+through to the argument parser, so `uisight-audit --help` began a real sign-in
+against whatever panel was on port 5055 and `uisight-panel --help` launched a
+browser. And `uisight --help` exited 1 — asking for help is not a failure, but
+any script checking the status saw one.
+
+Tests read the commands out of the docs and refuse any that names a bin instead
+of a package, and run every bin's `--help`.
+
 ## 0.25.0 — 2026-09-05
 
 A switcher above the panel, so several projects can be watched from one side bar.

@@ -23,6 +23,27 @@ import { homedir } from 'node:os';
 import { checkPort } from './login.mjs';
 
 const argv = process.argv.slice(2);
+
+// Without this, `uisight-audit --help` silently ignored the flag and started a
+// real sign-in against whatever panel happened to be on 5055.
+if (argv.includes('--help') || argv.includes('-h')) {
+  console.log(`uisight-audit - sign in, walk every role, measure every page.
+
+  uisight-audit                      every configured role, 10 pages each
+  uisight-audit --pages 12           pages per role
+  uisight-audit --roles guide,agency only these roles
+  uisight-audit --port 5061          panel to drive (default 5055)
+
+Accounts and roles live in ~/.uisight/accounts.json.
+A panel must be running: npx -y -p uisight uisight-panel <url>`);
+  process.exit(0);
+}
+if (argv.includes('--version') || argv.includes('-v')) {
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  console.log(version);
+  process.exit(0);
+}
+
 const arg = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback; };
 const PORT = Number(arg('--port', 5055));
 const MAX_PAGES = Number(arg('--pages', 10));

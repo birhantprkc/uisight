@@ -1189,7 +1189,11 @@ async function main() {
   }
 
   const o = parseArgs(process.argv.slice(2));
-  if (o.printHelp || !o.url) { printHelp(); process.exit(o.url ? 0 : 1); }
+  // Asking for help is not a failure. This exited 1 whenever --help was used
+  // without a URL — which is every time — so any script or CI step that checked
+  // the status saw the help screen as an error.
+  if (o.printHelp) { printHelp(); process.exit(0); }
+  if (!o.url) { printHelp(); process.exit(1); }
 
   // Taninmayan bir bayrak ADRES sanilmamali. `uisight --version` gercekten
   // `https://--version` adresini taramaya calisti ve

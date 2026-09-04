@@ -38,6 +38,25 @@ for (const d of [LIVE_DIR, MARKS_DIR, READ_DIR]) mkdirSync(d, { recursive: true 
 
 // --- Arguments ---
 const argv = process.argv.slice(2);
+
+// `--help` used to fall through the URL parser and start a panel on the default
+// page -- the flag looked like it did nothing.
+if (argv.includes('--help') || argv.includes('-h')) {
+  console.log(`uisight-panel - a live session you and your agent both watch.
+
+  uisight-panel <url>                page to open (default http://localhost:3000)
+  --device iphone-se,pixel           mobile sessions to run
+  --desktop laptop                   add a desktop session
+  --theme dark                       light | dark | both
+  --port 5056                        panel port (default 5055)
+  --single                           one session instead of the matrix
+  --no-open                          do not open a browser
+
+Then visit http://localhost:5055. Your agent reaches the same session
+through the MCP server: npx -y -p uisight uisight-mcp`);
+  process.exit(0);
+}
+
 const arg = (ad, vars) => { const i = argv.indexOf(ad); return i >= 0 && argv[i + 1] ? argv[i + 1] : vars; };
 const FLAGS_WITH_VALUE = new Set(['--device', '--desktop', '--theme', '--port', '--locale']);
 let targetUrl = null;

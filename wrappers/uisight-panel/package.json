@@ -1,0 +1,33 @@
+{
+  "name": "uisight-panel",
+  "version": "1.0.0",
+  "description": "Alias for the uisight-panel command in uisight (the live panel you and your agent share).",
+  "type": "module",
+  "bin": {
+    "uisight-panel": "bin.mjs"
+  },
+  "dependencies": {
+    "uisight": ">=0.25.0"
+  },
+  "files": [
+    "bin.mjs",
+    "README.md"
+  ],
+  "keywords": [
+    "uisight",
+    "mcp",
+    "ui",
+    "audit",
+    "accessibility"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sololabstr/uisight.git",
+    "directory": "wrappers/uisight-panel"
+  },
+  "homepage": "https://github.com/sololabstr/uisight#readme",
+  "engines": {
+    "node": ">=18"
+  }
+}
