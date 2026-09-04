@@ -128,6 +128,8 @@ Works inside VS Code / Antigravity via *Simple Browser: Show* → `http://localh
 - Touch targets below 44px (mobile profiles only; inline text links exempt by width, per WCAG)
 - Controls painted over by something else — confirmed with `elementFromPoint`, not geometry, and sampled edge to edge so a floating button covering one end of a wide button is caught
 - Controls trapped under a fixed bar, or under the on-screen keyboard (`keyboard-audit` opens the keyboard the way a phone does and re-measures)
+- Content clipped by a container with no way to scroll to it — the same box with `overflow-x: auto` is fine, because the content is reachable
+- Text sliding behind a control when a row does not wrap
 - Horizontal overflow with the offending elements
 - Fixed bars sitting under the notch or home indicator — only when the page asked for the full screen (`viewport-fit=cover`) and then never used the inset it got back; without that flag iOS letterboxes the page and nothing can be hidden
 
@@ -136,6 +138,7 @@ Works inside VS Code / Antigravity via *Simple Browser: Show* → `http://localh
 - A row of actions where every one looks identical, so nothing says which is primary — quiet on tabs, menus and filter chips, and only fires when mis-clicking costs something (save, delete, send, pay)
 - Light patches left behind in dark mode
 - Two languages in one screen, and US date formats in a non-US locale
+- "0 results" shown while a spinner is still turning — an intermediate state presented as the truth
 - An error message that names nothing ("An error occurred.") with no way out beside it
 - An irreversible action — delete, remove, delete account — on a page that owns no confirmation step at all; the button is never clicked, because clicking it really deletes
 - A permission asked for during load, before the person has done anything that would explain it
