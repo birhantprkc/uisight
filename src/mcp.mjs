@@ -128,8 +128,8 @@ const SURUM = (() => {
 })();
 const server = new McpServer({ name: 'uisight', version: SURUM });
 
-const SESSION = z.enum(['desktop', 'mobile']).optional()
-  .describe(TR ? "Hedef session: 'desktop' (masaustu) | 'mobile' (telefon). Varsayilan: mobile" : "Target session: 'desktop' | 'mobile'. Default: mobile");
+// Bu aciklama DOKUZ araca da kopyalanir; kisa olmasi dokuz kat kazandirir.
+const SESSION = z.enum(['desktop', 'mobile']).optional().describe('Default: mobile');
 
 /** Registers a tool under its EN name, or TR name when UISIGHT_LANG=tr. */
 function tool(enName, trName, enDesc, trDesc, schema, handler) {
@@ -137,9 +137,9 @@ function tool(enName, trName, enDesc, trDesc, schema, handler) {
 }
 
 tool('see_screen', 'ekrani_gor',
-  'Returns the current screen of the live session as an image — the EXACT same screen the user sees in the panel. full=true for full page.',
-  'Canli oturumun o anki ekranini goruntu olarak dondurur. Kullanicinin panelde gordugu ekranin AYNISI. tam sayfa icin full=true.',
-  { session: SESSION, full: z.boolean().optional().describe(TR ? 'Tam sayfa (uzun, daha pahali)' : 'Full-page capture (longer, more expensive)') },
+  'Screenshot of the live session (~460 tokens). Prefer inspect for measurable problems.',
+  'Canli oturumun ekran goruntusu (~460 token). Olculebilir sorunlar icin inspect.',
+  { session: SESSION, full: z.boolean().optional().describe('Full page, costlier') },
   async ({ session, full }) => {
     await ensureEngine();
     const r = await req(`/frame?session=${sid(session)}${full ? '&full=1' : ''}`, {}, 30000);
@@ -173,9 +173,11 @@ tool('goto', 'git',
   });
 
 tool('tap', 'tikla',
-  'Clicks via CSS selector or coordinates. With a selector, coordinates are not needed. The user sees it happen live in the panel.',
-  'CSS secici veya koordinatla tiklar. Kullanici paneli aninda gorur.',
-  { session: SESSION, selector: z.string().optional().describe("CSS selector, e.g. 'a[href*=\"/login\"]' — more robust than coordinates"), x: z.number().optional().describe(TR ? 'Yatay CSS pikseli (sol kenardan), secici yoksa' : 'Horizontal CSS pixel from the left edge — only when no selector is given'), y: z.number().optional().describe(TR ? 'Dikey CSS pikseli (ust kenardan), secici yoksa' : 'Vertical CSS pixel from the top edge — only when no selector is given') },
+  'Tap by CSS selector (preferred) or x/y CSS pixels.',
+  'CSS secici (tercih) ya da x/y CSS pikseliyle dokunur.',
+  { session: SESSION, selector: z.string().optional().describe('CSS selector'),
+    x: z.number().optional().describe('CSS px, only without selector'),
+    y: z.number().optional().describe('CSS px, only without selector') },
   async ({ session, selector, x, y }) => {
     await ensureEngine();
     const r = await action({ type: 'click', session: session ? sid(session) : undefined, selector: selector, x, y });
@@ -183,9 +185,10 @@ tool('tap', 'tikla',
   });
 
 tool('type_text', 'yaz',
-  'Types text into the focused field, or presses a special key (Enter, Tab, Escape, Backspace, ArrowDown...).',
-  'Odaklanmis alana metin yazar veya ozel tusa basar.',
-  { session: SESSION, text: z.string().optional().describe(TR ? 'Odaklanmis alana yazilacak metin' : 'Text to type into the focused field'), key: z.string().optional().describe(TR ? 'Ozel tus adi (Enter, Tab, Escape, Backspace, ArrowDown...)' : 'Special key name (Enter, Tab, Escape, Backspace, ArrowDown...)') },
+  'Type into the focused field, or press one key.',
+  'Odaklanmis alana yazar ya da tek tusa basar.',
+  { session: SESSION, text: z.string().optional().describe('Text to type'),
+    key: z.string().optional().describe('Enter | Tab | Escape | Backspace | ArrowDown') },
   async ({ session, text: t, key }) => {
     await ensureEngine();
     const r = await action({ type: 'press', session: session ? sid(session) : undefined, text: t, key });
@@ -205,7 +208,9 @@ tool('scroll', 'kaydir',
 tool('set_device', 'cihaz_degistir',
   "Changes a session's device profile and/or the color theme. Profiles: iphone-15, iphone-se, pixel, galaxy, ipad, desktop, laptop. theme: light|dark (without session, theme applies to ALL sessions).",
   'Oturumun cihaz profilini ve/veya temayi degistirir.',
-  { session: SESSION, device: z.string().optional().describe(TR ? 'Profil anahtari (iphone-15, iphone-se, pixel, galaxy, ipad, desktop, laptop)' : 'Profile key: iphone-15, iphone-se, pixel, galaxy, ipad, desktop, laptop'), theme: z.enum(['light', 'dark']).optional().describe(TR ? 'Renk semasi; oturum verilmezse TUM oturumlara uygulanir' : 'Color scheme; without a session it applies to ALL sessions') },
+  { session: SESSION,
+    device: z.string().optional().describe('iphone-15|iphone-se|pixel|galaxy|ipad|desktop|laptop'),
+    theme: z.enum(['light', 'dark']).optional().describe('Without session: all') },
   async ({ session, device, theme }) => {
     await ensureEngine();
     const r = await action({ type: 'device', session: session ? sid(session) : undefined, device: device, theme: theme });
@@ -231,8 +236,8 @@ tool('status', 'durum',
   });
 
 tool('marks', 'isaretler',
-  "Returns the notes the user pinned in the panel (📌) together with the screen frame at that moment — the human→AI channel. clear=true marks them read (default true).",
-  'Kullanicinin panelde 📌 ile biraktigi notlari + o anki kareyi dondurur.',
+  'Notes the user pinned in the panel, with the frame at that moment.',
+  'Kullanicinin panelde biraktigi notlar + o anki kare.',
   { clear: z.boolean().optional().describe('Drop returned marks from the queue (default true)') },
   async ({ clear }) => {
     await ensureEngine();

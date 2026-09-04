@@ -141,6 +141,7 @@ export const INSPECTION_SCRIPT = (settings) => {
   const result = {
     horizontalOverflow: null, smallTargets: [], tinyText: [], imagesWithoutAlt: 0,
     coveredControls: [], clippedText: [], coveredByFixed: [],
+    sameLookingActions: [], darkModeLightPatches: [], mixedLanguage: [], usDates: [],
     invisibleText: [], lowContrast: [], buttonIssues: [], themeSignature: [],
   };
 
@@ -537,7 +538,89 @@ export const INSPECTION_SCRIPT = (settings) => {
   capAt('tinyText', 8);
   capAt('coveredControls', 10);
   capAt('clippedText', 10);
+
+  // 8) Bir grupta HER dugme ayni gorunuyorsa hangisinin ana eylem oldugu
+  // anlasilmaz. "Kaydet · Iptal · Sil" ucu de ayni renkse kullanici hangisine
+  // basacagini renkten degil OKUYARAK bulmak zorunda kalir.
+  const gruplar = new Map();
+  document.querySelectorAll('button, a[href][class*="btn"], [role="button"]').forEach((el) => {
+    if (!isVisible(el)) return;
+    const t2 = shortLabel(el);
+    if (!t2 || t2.length > 24) return;                 // ikon/uzun metin degil, eylem etiketi
+    const p = el.parentElement;
+    if (!p) return;
+    if (!gruplar.has(p)) gruplar.set(p, []);
+    gruplar.get(p).push(el);
+  });
+  for (const [, uyeler] of gruplar) {
+    if (uyeler.length < 2 || uyeler.length > 6) continue;
+    const imzalar = uyeler.map((el) => {
+      const s = getComputedStyle(el);
+      const bgc = effectiveBackground(el);
+      return {
+        el,
+        imza: `${bgc ? Math.round(bgc.r) + ',' + Math.round(bgc.g) + ',' + Math.round(bgc.b) : 'yok'}|${s.borderColor}|${s.fontWeight}`,
+      };
+    });
+    const benzersiz = new Set(imzalar.map((x) => x.imza));
+    if (benzersiz.size !== 1) continue;                // en az biri farkli -> sorun yok
+    result.sameLookingActions.push({
+      sel: describe(uyeler[0].parentElement),
+      count: uyeler.length,
+      labels: uyeler.map((el) => shortLabel(el)).slice(0, 6),
+    });
+  }
+
+  // 9) Koyu temada acik renkli buyuk alan — "karanlik modda beyaz ekran".
+  if (settings && settings.theme === 'dark') {
+    document.querySelectorAll('main, section, article, div, header, footer, aside').forEach((el) => {
+      if (!isVisible(el)) return;
+      const r = el.getBoundingClientRect();
+      if (r.width * r.height < innerWidth * innerHeight * 0.06) return;   // kucuk kutu degil
+      const bgc = effectiveBackground(el);
+      if (!bgc) return;
+      if (luminance(bgc) < 0.5) return;                 // koyu -> sorun yok
+      // Ebeveyni de acikta ise tek kaynak orasi; en dis acik kutuyu bildir.
+      const pbg = el.parentElement ? effectiveBackground(el.parentElement) : null;
+      if (pbg && luminance(pbg) >= 0.5) return;
+      result.darkModeLightPatches.push({
+        sel: describe(el), size: `${Math.round(r.width)}x${Math.round(r.height)}`,
+        bg: `rgb(${Math.round(bgc.r)}, ${Math.round(bgc.g)}, ${Math.round(bgc.b)})`,
+        share: Math.round((r.width * r.height) / (innerWidth * innerHeight) * 100),
+      });
+    });
+  }
+
+  // 10) Ayni ekranda iki dil. Turkce'ye ozgu harf/ek TASIYAN metinle, yalniz
+  // Ingilizce kelimelerden olusan metin bir arada gorunuyorsa tutarsizlik var.
+  // Tek bir innerText blobu ALDATIR: yan yana iki dugmenin metni bosluksuz
+  // birlesir ("KaydetCancelDelete") ve kelime sinirlari tutmaz. Metni oge oge
+  // toplayip bosluklarla birlestiriyoruz — ekranda okundugu gibi.
+  const govdeMetni = [...document.querySelectorAll('body *')]
+    .filter((el) => !el.children.length && (el.innerText || '').trim())
+    .map((el) => el.innerText.trim())
+    .join(' ')
+    .slice(0, 20000);
+  const trIsaret = (govdeMetni.match(/[ığşçöüİĞŞÇÖÜ]|\b(ve|için|ile|bir|bu|olarak|yeni|kaydet|iptal|ara|giriş)\b/gi) || []).length;
+  const enIsaret = (govdeMetni.match(/\b(the|and|with|your|save|cancel|search|login|sign in|settings|continue|delete|next|back)\b/gi) || []).length;
+  if (trIsaret >= 5 && enIsaret >= 3) {
+    const ornekler = [...new Set((govdeMetni.match(/\b(the|and|with|your|save|cancel|search|login|sign in|settings|continue|delete|next|back)\b/gi) || []))].slice(0, 6);
+    result.mixedLanguage.push({ trCount: trIsaret, enCount: enIsaret, englishWords: ornekler });
+  }
+
+  // 11) Amerikan tarih bicimi. GG/AA belirsizligi degil, ay-once olani ara:
+  // 13'ten buyuk ikinci parca varsa kesin AA/GG/YYYY.
+  const tarihler = [...new Set((govdeMetni.match(/\b(0?[1-9]|1[0-2])\/(0?[1-9]|[12]\d|3[01])\/(19|20)\d\d\b/g) || []))];
+  for (const d2 of tarihler.slice(0, 6)) {
+    const [a2, b2] = d2.split('/').map(Number);
+    if (b2 > 12) result.usDates.push({ text: d2, note: 'AA/GG/YYYY — ikinci parca 12den buyuk' });
+    else if (a2 <= 12 && b2 <= 12) result.usDates.push({ text: d2, note: 'belirsiz: AA/GG mi GG/AA mi' });
+  }
+
   capAt('coveredByFixed', 10);
+  capAt('sameLookingActions', 6);
+  capAt('darkModeLightPatches', 6);
+  capAt('usDates', 6);
   return result;
 };
 
@@ -633,7 +716,7 @@ async function tur(o) {
           record.state = response ? response.status() : null;
           await page.waitForTimeout(o.settle);
           record.baslik = await page.title();
-          record.inspection = await page.evaluate(INSPECTION_SCRIPT, { mobile: p.mobile !== false });
+          record.inspection = await page.evaluate(INSPECTION_SCRIPT, { mobile: p.mobile !== false, theme });
 
           const ad = `${slug(path)}__${key}__${theme}.png`;
           const png = join(outDir, ad);

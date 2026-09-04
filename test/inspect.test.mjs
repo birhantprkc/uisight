@@ -27,7 +27,7 @@ async function inspect(html, { profile = 'pixel', theme = 'light' } = {}) {
   const page = await ctx.newPage();
   try {
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
-    return await page.evaluate(INSPECTION_SCRIPT, { mobile: p.mobile !== false });
+    return await page.evaluate(INSPECTION_SCRIPT, { mobile: p.mobile !== false, theme });
   } finally {
     await ctx.close();
   }
@@ -310,4 +310,85 @@ test('a round floating button is not reported as covered by what shows through i
     <button aria-label="Sohbetler" style="position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:50%;background:#cf4709;color:#fff;border:0;z-index:50">S</button>`));
   const hit = (d.coveredControls || []).find((x) => x.text.includes('Sohbet') || x.size === '56x56');
   assert.equal(hit, undefined, 'the FAB paints over the text, it is not covered by it');
+});
+
+/**
+ * UX checks — the failures a person names in a sentence, not a stack trace.
+ *
+ * Each of these came from a list of real complaints. They are only worth having
+ * if they stay quiet on correct pages, so every one has a false-alarm test too.
+ */
+test('buttons in a row that all look identical hide which one is the primary action', async () => {
+  const d = await inspect(body(`
+    <div style="display:flex;gap:8px;padding:16px">
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Kaydet</button>
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Iptal</button>
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Sil</button>
+    </div>`));
+  const hit = (d.sameLookingActions || [])[0];
+  assert.ok(hit, 'three identical buttons must be reported');
+  assert.equal(hit.count, 3);
+  assert.ok(hit.labels.includes('Kaydet'));
+});
+
+test('a row where the primary action stands out is not reported', async () => {
+  const d = await inspect(body(`
+    <div style="display:flex;gap:8px;padding:16px">
+      <button style="background:#cf4709;color:#fff;border:0;padding:10px 18px">Kaydet</button>
+      <button style="background:#e5e5e5;border:1px solid #ccc;padding:10px 18px">Iptal</button>
+    </div>`));
+  assert.equal((d.sameLookingActions || []).length, 0, 'a distinct primary action is the point');
+});
+
+test('a light panel left behind in dark mode is reported', async () => {
+  const d = await inspect(
+    body(`<main style="background:#111;min-height:100vh">
+            <section style="background:#ffffff;height:60vh">Ayarlar</section>
+          </main>`),
+    { theme: 'dark' });
+  const hit = (d.darkModeLightPatches || [])[0];
+  assert.ok(hit, 'a white panel in dark mode must be reported');
+  assert.ok(hit.share >= 20, `it should say how much of the screen, got ${hit?.share}`);
+});
+
+test('a properly dark page in dark mode is not reported', async () => {
+  const d = await inspect(
+    body(`<main style="background:#111;min-height:100vh;color:#eee">
+            <section style="background:#1c1c1c;height:60vh">Ayarlar</section>
+          </main>`),
+    { theme: 'dark' });
+  assert.equal((d.darkModeLightPatches || []).length, 0, 'dark on dark is correct');
+});
+
+test('a light page in LIGHT mode is never reported as a dark-mode problem', async () => {
+  const d = await inspect(body(`<main style="background:#fff;min-height:100vh">Ayarlar</main>`), { theme: 'light' });
+  assert.equal((d.darkModeLightPatches || []).length, 0, 'the check only applies to dark mode');
+});
+
+test('American date format is reported, and an unambiguous day-first date is not', async () => {
+  const d = await inspect(body(`<p>Rezervasyon: 09/28/2026 tarihinde baslar ve bir hafta surer.</p>`));
+  const hit = (d.usDates || []).find((x) => x.text === '09/28/2026');
+  assert.ok(hit, 'MM/DD/YYYY must be reported');
+  assert.match(hit.note, /AA\/GG/);
+
+  const temiz = await inspect(body(`<p>Rezervasyon 28.09.2026 tarihinde baslar ve bir hafta surer.</p>`));
+  assert.equal((temiz.usDates || []).length, 0, 'dotted Turkish dates are fine');
+});
+
+test('a page mixing Turkish and English UI words is reported', async () => {
+  const d = await inspect(body(`
+    <nav><a href="#">Ana sayfa</a> <a href="#">Ayarlar</a> <a href="#">Settings</a></nav>
+    <p>Rehberinizi bölgeye göre bulun ve rezervasyon yapın. Please continue with your account to save changes.</p>
+    <button>Kaydet</button><button>Cancel</button><button>Delete</button>`));
+  const hit = (d.mixedLanguage || [])[0];
+  assert.ok(hit, 'mixed UI language must be reported');
+  assert.ok(hit.englishWords.length > 0, 'it should name the English words found');
+});
+
+test('a page entirely in Turkish is not reported as mixed', async () => {
+  const d = await inspect(body(`
+    <nav><a href="#">Ana sayfa</a> <a href="#">Ayarlar</a> <a href="#">Profil</a></nav>
+    <p>Rehberinizi bölgeye göre bulun ve rezervasyon yapın. Hesabınızla devam ederek değişiklikleri kaydedin.</p>
+    <button>Kaydet</button><button>İptal</button><button>Sil</button>`));
+  assert.equal((d.mixedLanguage || []).length, 0, 'a single-language page is consistent');
 });

@@ -290,7 +290,7 @@ async function applyAction(g) {
         try {
           // Timeout: a blocking native dialog on the target page would otherwise leave evaluate hanging forever.
           o.page.setDefaultTimeout(20000);
-          const d = await o.page.evaluate(INSPECTION_SCRIPT, { mobile: o.profile.mobile !== false });
+          const d = await o.page.evaluate(INSPECTION_SCRIPT, { mobile: o.profile.mobile !== false, theme: state.theme });
           results.push({ session: o.id, device: o.deviceKey, label: o.profile.label, theme: state.theme, url: state.url, inspection: d });
         } catch (e) {
           results.push({ session: o.id, device: o.deviceKey, error: String(e).slice(0, 200) });
