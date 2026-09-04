@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.18.0 — 2026-09-04
+
+A third field report, and the worst bug of the three days: **this tool was
+inflating its own numbers.**
+
+Event listeners were attached inside the per-path loop and never removed. Each
+one closed over its own record, so loading page N fired N listeners and wrote the
+same event into every earlier record. Twelve pages with two real errors each came
+back as `22, 20, 18 … 2` — a perfect descending staircase. The first page looked
+eleven times worse than it was, and nothing about the output looked wrong, which
+is why it survived. Fixed, removed in a `finally` so a page that throws cannot
+leak one either, and pinned by tests that read the loop structure rather than the
+output, because every number in that output was plausible.
+
+**A path Git Bash rewrote was scanned as a URL.** MSYS turns a bare `/` inside
+`--path "/,/gbf"` into `C:/Program Files/Git`; the tool made a screenshot called
+`C-Program-Files-Git__pixel__dark.png` and **never scanned the home page**,
+silently. It now says so and names `MSYS_NO_PATHCONV=1`.
+
+**Development overlays are not part of the application.** Next.js's dev button
+was reported as covering a control. It does not exist in production.
+
+**Disabled buttons: the check only looked at opacity.** One app moved the
+background from zinc-900 to zinc-200, set the text to zinc-600, added
+`cursor: not-allowed` and an explanatory `title` — and the finding stayed. A
+check that cannot see a fix discourages the fix. Cursor, title, and a real
+background difference from an enabled sibling all count now.
+
+**`--timeout`.** The fixed 30s budget wasted an entire run: a heavy Next.js app's
+first compile exceeded it and all 72 screens came back empty with TimeoutError.
+
 ## 0.17.0 — 2026-09-04
 
 Two field reports, from agents auditing two different applications. Six real

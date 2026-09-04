@@ -61,7 +61,7 @@ const DEFAULT_DEVICES = ['iphone-15', 'pixel'];
 
 // --- Arguments --------------------------------------------------------------
 function parseArgs(argv) {
-  const o = { url: null, device: DEFAULT_DEVICES, path: ['/'], theme: ['light'], full: false, live: null, settle: 1200, watch: 0, open: true, locale: null };
+  const o = { url: null, device: DEFAULT_DEVICES, path: ['/'], theme: ['light'], full: false, live: null, settle: 1200, watch: 0, open: true, locale: null, timeout: 30000 };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -71,6 +71,9 @@ function parseArgs(argv) {
     else if (a === '--theme' || a === '-t') o.theme = argv[++i] === 'both' ? ['light', 'dark'] : [argv[i]];
     else if (a === '--full') o.full = true;
     else if (a === '--live') o.live = argv[++i] || 'iphone-15';
+    // Sabit 30 sn bir kosumu tamamen bosa cikardi: agir bir Next.js uygulamasinin
+    // ILK derlemesi bunu asti ve 72 ekranin hepsi TimeoutError ile bos dondu.
+    else if (a === '--timeout') o.timeout = Math.max(5000, Number(argv[++i]) || 30000);
     else if (a === '--wait') o.settle = Number(argv[++i]);
     else if (a === '--watch') o.watch = Number(argv[++i] || 10);
     else if (a === '--no-open') o.open = false;
@@ -93,6 +96,8 @@ Options
   --theme,  -t   light | dark | both                                    (default: light)
   --full         full-page screenshots (not just the viewport)
   --wait <ms>    settle time after page load                            (default: 1200)
+  --timeout <ms> per-page load budget; raise it for a cold dev server   (default: 30000)
+  --version, -v  print the version and exit
   --watch <s>    continuous mode: re-captures every <s> seconds, gallery auto-refreshes
   --locale <tag> pin a browser locale, e.g. en-US (default: this machine's)
   --no-open      do not auto-open the gallery in the browser
@@ -229,6 +234,14 @@ export const INSPECTION_SCRIPT = (settings) => {
     unsafeArea: [], genericErrors: [], destructiveWithoutConfirm: [], eagerPermissions: [],
     invisibleText: [], lowContrast: [], buttonIssues: [], themeSignature: [],
   };
+
+  // Gelistirme aracinin kendi katmani uygulamanin parcasi degil ve PROD'da yok.
+  // Next.js'in dev dugmesi bir sayfada "ortulmus kontrol" olarak raporlandi;
+  // sahada kullanicinin gormedigi bir seyi bulgu saymak, aracin guvenilirligini
+  // ucuza harciyor.
+  const gelistirmeKatmani = (el) => !!el.closest?.(
+    'nextjs-portal, #__next-build-watcher, [data-nextjs-toast], vite-error-overlay, #vite-error-overlay, [data-vite-dev-id]',
+  );
 
   // --- color helpers (WCAG) ---
   // Color parsing is left to the browser: oklab/oklch/lab/color-mix all work.
@@ -439,7 +452,26 @@ export const INSPECTION_SCRIPT = (settings) => {
     if (noBackground && (!border || border.a < 0.05) && el.tagName === 'BUTTON' && !sekmeIcinde) {
       issues.push('no background and no border — does not read as a button');
     }
-    if (el.disabled && parseFloat(st.opacity) > 0.85) issues.push('disabled but visually indistinguishable');
+    // Pasiflik yalniz saydamlikla anlatilmaz. Bir uygulama zemini zinc-900'den
+    // zinc-200'e aldi, metni zinc-600 yapti, `cursor: not-allowed` ve aciklayici
+    // bir `title` ekledi — kontrol yine "ayirt edilemez" dedi, cunku sadece
+    // opacity'ye bakiyordu. Duzeltmeyi gormeyen kontrol, duzeltmeyi caydiriyor.
+    if (el.disabled) {
+      const solgun = parseFloat(st.opacity) <= 0.85;
+      const imlec = /not-allowed|default/.test(st.cursor);
+      const anlatiyor = el.getAttribute('title') || el.getAttribute('aria-describedby');
+      // Etkin bir kardesle ayni zemini paylasiyor mu? Ayni ise gorsel fark yok.
+      let zeminFarkli = false;
+      const kardes = [...(el.parentElement?.children || [])]
+        .find((n) => n !== el && n.tagName === el.tagName && !n.disabled);
+      if (kardes) {
+        const a = effectiveBackground(el), b = effectiveBackground(kardes);
+        zeminFarkli = !!(a && b) && (Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b)) > 24;
+      }
+      if (!solgun && !imlec && !anlatiyor && !zeminFarkli) {
+        issues.push('disabled but visually indistinguishable');
+      }
+    }
     if (issues.length) result.buttonIssues.push({ sel: describe(el), text: shortLabel(el) || '(no text)', issues });
   }
 
@@ -520,7 +552,7 @@ export const INSPECTION_SCRIPT = (settings) => {
   // element's CENTRE and was blind to exactly that — a FAB covering the right end
   // of a wide button leaves the centre clear. So sample a grid, edge to edge.
   document.querySelectorAll('button, a[href], [role="button"], input[type="submit"]').forEach((el) => {
-    if (!isVisible(el)) return;
+    if (!isVisible(el) || gelistirmeKatmani(el)) return;
 
     // An inline link that wraps onto two lines has a bounding BOX spanning both
     // lines AND the gap between them — a rectangle covering text that belongs to
@@ -635,6 +667,7 @@ export const INSPECTION_SCRIPT = (settings) => {
   // own page content read as "half the sentence is missing" to the user.
   const bars = [...document.querySelectorAll('*')].filter((el) => {
     if (!isVisible(el)) return false;
+    if (gelistirmeKatmani(el)) return false;
     const st = getComputedStyle(el);
     return (st.position === 'fixed' || st.position === 'sticky') && parseFloat(st.zIndex || 0) >= 0;
   });
@@ -1011,20 +1044,44 @@ async function tur(o) {
       await page.addInitScript(PERMISSION_HOOKS);
 
       for (const path of o.path) {
+        // Git Bash/MSYS `--path "/,/gbf"` icindeki tek basina `/` karakterini
+        // `C:/Program Files/Git`e cevirir. Arac bunu yol sanip
+        // `C-Program-Files-Git__pixel__dark.png` uretti ve ANA SAYFA HIC
+        // taranmadi — hicbir hata da vermeden. Windows'ta ancak dosya adlarina
+        // bakan biri fark eder.
+        if (/^[A-Za-z]:[\\/]/.test(path) || /^\/[A-Za-z]:/.test(path)) {
+          console.log(`  ! path "${path}" looks like a Windows file path, not a URL path.`);
+          console.log('    Git Bash rewrote it. Re-run with MSYS_NO_PATHCONV=1, or quote as "//".');
+          continue;
+        }
         const target = new URL(path, o.url).toString();
         const record = { device: key, label: p.label, engine: engineName, theme, path, url: target, console: [], network: [], error: null };
 
-        page.on('pageerror', (e) => record.console.push({ type: 'js-error', message: String(e).slice(0, 200) }));
-        page.on('console', (m) => { if (m.type() === 'error') record.console.push({ type: 'console', message: m.text().slice(0, 200) }); });
-        page.on('response', (r) => { if (r.status() >= 400) record.network.push({ status: r.status(), url: r.url().slice(0, 120) }); });
+        // 🔴 Bu dinleyiciler her path icin YENIDEN ekleniyor ve eskiden hic
+        // kaldirilmiyordu. Her biri kendi `record`una kapanis tutuyor, dolayisiyla
+        // N'inci sayfa yuklenirken N dinleyici birden tetikleniyor ve ayni olay
+        // ONCEKI TUM kayitlara da yaziliyordu.
+        //
+        // Sahada gorulen imza tam bir azalan merdiven: 12 sayfanin her birinde
+        // gercek 2 hata varken rapor `/ → 22, /gbf → 20, /sds → 18 … /themes → 2`
+        // diyordu. Ilk sayfa 11 kat sismis, son sayfa dogru. Raporu okuyan ana
+        // sayfada 22 basarisiz istek gorup panige kapiliyor; gercek sayi 2.
+        //
+        // Ayrica sizinti: 12 path x 3 dinleyici = 36 canli listener.
+        const dinleyiciler = {
+          pageerror: (e) => record.console.push({ type: 'js-error', message: String(e).slice(0, 200) }),
+          console: (m) => { if (m.type() === 'error') record.console.push({ type: 'console', message: m.text().slice(0, 200) }); },
+          response: (r) => { if (r.status() >= 400) record.network.push({ status: r.status(), url: r.url().slice(0, 120) }); },
+        };
+        for (const [olay, fn] of Object.entries(dinleyiciler)) page.on(olay, fn);
 
         try {
           // One retry: edge networks intermittently stall a single request in a burst run.
           let response;
           try {
-            response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: o.timeout });
           } catch {
-            response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            response = await page.goto(target, { waitUntil: 'domcontentloaded', timeout: o.timeout });
           }
           record.state = response ? response.status() : null;
           await page.waitForTimeout(o.settle);
@@ -1040,6 +1097,10 @@ async function tur(o) {
         } catch (e) {
           record.error = String(e).slice(0, 300);
           console.log(`  ERROR ${key}/${theme} ${path}: ${record.error.split('\n')[0]}`);
+        } finally {
+          // Hata da olsa kaldir: birakılan dinleyici sonraki her sayfanin
+          // olaylarini bu kayda yazmaya devam eder.
+          for (const [olay, fn] of Object.entries(dinleyiciler)) page.off(olay, fn);
         }
         records.push(record);
       }
