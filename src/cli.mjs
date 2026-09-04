@@ -61,7 +61,7 @@ const DEFAULT_DEVICES = ['iphone-15', 'pixel'];
 
 // --- Arguments --------------------------------------------------------------
 function parseArgs(argv) {
-  const o = { url: null, device: DEFAULT_DEVICES, path: ['/'], theme: ['light'], full: false, live: null, settle: 1200, watch: 0, open: true, locale: null, timeout: 30000 };
+  const o = { url: null, device: DEFAULT_DEVICES, path: ['/'], theme: ['light'], full: false, live: null, settle: 1200, watch: 0, open: true, locale: null, timeout: 30000, maxRequests: 0 };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -74,6 +74,12 @@ function parseArgs(argv) {
     // Sabit 30 sn bir kosumu tamamen bosa cikardi: agir bir Next.js uygulamasinin
     // ILK derlemesi bunu asti ve 72 ekranin hepsi TimeoutError ile bos dondu.
     else if (a === '--timeout') o.timeout = Math.max(5000, Number(argv[++i]) || 30000);
+    // Olculdu: TEK sayfa yuklemesi ayni anda 20 istek ucuruyor — bu tarayicinin
+    // kendi baglanti havuzu, bu aracin es zamanliligi degil (cihaz/tema/path
+    // donguleri zaten sirali). Havuzu kucuk bir arka uc (ornegin Prisma
+    // connection_limit=1) bu 20 istegi tek baglantida kuyruga alip kilitlenebilir;
+    // bir kullanicinin yerel sunucusu iki kez tamamen durdu.
+    else if (a === '--max-requests') o.maxRequests = Math.max(1, Number(argv[++i]) || 0);
     else if (a === '--wait') o.settle = Number(argv[++i]);
     else if (a === '--watch') o.watch = Number(argv[++i] || 10);
     else if (a === '--no-open') o.open = false;
@@ -97,6 +103,8 @@ Options
   --full         full-page screenshots (not just the viewport)
   --wait <ms>    settle time after page load                            (default: 1200)
   --timeout <ms> per-page load budget; raise it for a cold dev server   (default: 30000)
+  --max-requests <n>  cap in-flight requests; a page fires ~20 at once and a
+                 backend with a small connection pool can stall on that
   --version, -v  print the version and exit
   --watch <s>    continuous mode: re-captures every <s> seconds, gallery auto-refreshes
   --locale <tag> pin a browser locale, e.g. en-US (default: this machine's)
@@ -1217,6 +1225,23 @@ async function tur(o) {
       const ctx = await browser.newContext({ ...deviceSettings(p.pw), colorScheme: theme, ...(o.locale ? { locale: o.locale } : {}) });
       const page = await ctx.newPage();
       await page.addInitScript(PERMISSION_HOOKS);
+
+      // Ucustaki istek sayisini sinirla: kapasitesi dar bir arka ucu tikamamak icin.
+      if (o.maxRequests) {
+        let ucusta = 0;
+        const kuyruk = [];
+        const sonraki = () => {
+          if (ucusta >= o.maxRequests || !kuyruk.length) return;
+          ucusta++;
+          kuyruk.shift()();
+        };
+        await page.route('**/*', async (route) => {
+          await new Promise((res) => { kuyruk.push(res); sonraki(); });
+          try { await route.continue(); } catch { /* iptal edilmis istek */ }
+          ucusta--;
+          sonraki();
+        });
+      }
 
       for (const path of o.path) {
         // Git Bash/MSYS `--path "/,/gbf"` icindeki tek basina `/` karakterini
