@@ -35,6 +35,42 @@ function derivedPort() {
   return 5055;
 }
 const port = () => config().get('port', 0) || derivedPort();
+
+/**
+ * Calisan panelleri bul.
+ *
+ * Proje-basina port cakismayi cozdu ama yeni bir bosluk acti: turetme yalniz
+ * ajan ile editorun AYNI klasorde olmasi halinde tutuyor. Ajan bir klasorden
+ * calisip baska bir uygulamayi hedeflediginde — ki sik olan bu — kenar cubugu
+ * bos bir porta bakiyor ve insan ajanin ne yaptigini goremiyor. Oysa bu aracin
+ * butun tezi ikisinin AYNI ekrani paylasmasi.
+ *
+ * Cozum tahmin degil kesif: araligi tara, ne varsa goster.
+ */
+async function discoverPanels(timeoutMs = 400) {
+  const adaylar = [];
+  for (let p = 5055; p < 5175; p++) if (!BLOCKED_PORTS.has(p)) adaylar.push(p);
+
+  const dene = (p) => new Promise((resolve) => {
+    const r = http.request({ host: '127.0.0.1', port: p, path: '/state', method: 'GET', timeout: timeoutMs },
+      (res) => {
+        let s = '';
+        res.on('data', (d) => { s += d; });
+        res.on('end', () => {
+          try {
+            const d = JSON.parse(s);
+            resolve(d && d.sessions ? { port: p, url: d.url } : null);
+          } catch { resolve(null); }
+        });
+      });
+    r.on('error', () => resolve(null));
+    r.on('timeout', () => { r.destroy(); resolve(null); });
+    r.end();
+  });
+
+  const sonuc = await Promise.all(adaylar.map(dene));
+  return sonuc.filter(Boolean);
+}
 const toolPath = () => config().get('toolPath', '');
 
 // --- Sunucu ile konusma ---
@@ -79,7 +115,27 @@ function request(route, body) {
 const isServerUp = () => request('/state').then((d) => !!d).catch(() => false);
 
 async function startServer(output) {
-  if (await isServerUp()) return true; // baska bir oturum zaten calisiyor
+  if (await isServerUp()) return true; // bu portta zaten calisiyor
+
+  // Bu portta yok ama BASKA bir portta olabilir: ajan baska bir klasorden
+  // calisiyorsa turetilen port tutmaz. Varsa ona baglan, yenisini acma.
+  const bulunan = await discoverPanels();
+  if (bulunan.length === 1) {
+    await config().update('port', bulunan[0].port, true);
+    output.appendLine(`[bilgi] running panel found on ${bulunan[0].port} (${bulunan[0].url}) — attaching`);
+    return true;
+  }
+  if (bulunan.length > 1) {
+    const secim = await vscode.window.showQuickPick(
+      bulunan.map((b) => ({ label: `port ${b.port}`, description: b.url, port: b.port })),
+      { placeHolder: 'Several panels are running — which one?' },
+    );
+    if (secim) {
+      await config().update('port', secim.port, true);
+      output.appendLine(`[bilgi] attaching to ${secim.port}`);
+      return true;
+    }
+  }
 
   const a = config();
   const common = [
@@ -263,6 +319,22 @@ function activate(ctx) {
     const d = await request('/state').catch(() => null);
     const url = await vscode.window.showInputBox({ prompt: 'Address for the panel to open', value: d?.url || config().get('url') });
     if (url) { await act('goto', { url }); await config().update('url', url, true); }
+  });
+
+  register('uisight.attach', async () => {
+    const bulunan = await discoverPanels();
+    if (!bulunan.length) {
+      vscode.window.showInformationMessage('uisight: no running panel found on 5055-5174.');
+      return;
+    }
+    const secim = await vscode.window.showQuickPick(
+      bulunan.map((b) => ({ label: `port ${b.port}`, description: b.url, port: b.port })),
+      { placeHolder: 'Attach the side panel to a running session' },
+    );
+    if (!secim) return;
+    await config().update('port', secim.port, true);
+    showPanel(ctx);
+    vscode.window.showInformationMessage(`uisight: attached to port ${secim.port}`);
   });
 
   register('uisight.inspect', async () => {

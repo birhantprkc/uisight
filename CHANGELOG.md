@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.24.0 — 2026-09-05
+
+The side panel was watching a port nobody was using.
+
+Per-project ports fixed four agents fighting over one panel, and quietly broke
+the other half of the idea: the human watching what the agent does. The port is
+derived from a folder, so it only lines up when the agent and the editor are in
+the *same* folder. Working from one repo while measuring another — which is most
+of the time — leaves the side bar staring at an empty port. Five panels were
+running and the extension was watching a sixth.
+
+It discovers them now instead of guessing: a scan of 5055-5174 takes 29ms and
+found all five. One panel, it attaches. Several, it asks. None, it starts one.
+`uisight: Attach to a running panel` switches at any time.
+
+Two of the coverage tests had to be narrowed with it. They scanned the whole
+extension file for `d.<field>` reads, so `d.sessions` in the discovery code
+looked like a finding type the engine had failed to produce. The check belongs
+to the inspect renderer, not the file.
+
 ## 0.23.0 — 2026-09-05
 
 `see_screen` could hand the model a picture 25 seconds old.

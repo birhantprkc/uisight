@@ -43,8 +43,12 @@ test('the extension sends the token, or every command it makes is a 403', () => 
 
 test('the result fields the extension renders are fields the engine produces', () => {
   const cli = readFileSync(join(root, 'src', 'cli.mjs'), 'utf8');
-  // `d.` reads in the inspect renderer, minus the per-finding sub-fields.
-  const read = uniq(/\bd\.([a-zA-Z]+)\b/g, ext).filter((k) => k !== 'totals');
+  // Only the `d.` reads inside the INSPECT renderer. Scanning the whole file
+  // mistakes an unrelated read — `d.sessions` in the panel-discovery code — for
+  // a claimed finding field.
+  const i0 = ext.indexOf("register('uisight.inspect'");
+  const j0 = ext.indexOf("register('uisight.send'", i0);
+  const read = uniq(/\bd\.([a-zA-Z]+)\b/g, ext.slice(i0, j0)).filter((k) => k !== 'totals');
   const produced = uniq(/result\.([a-zA-Z]+)(?:\.push|\s*=)/g, cli)
     .concat(uniq(/([a-zA-Z]+): (?:\[\]|0|null)[,\n]/g, cli));
   const missing = read.filter((k) => !produced.includes(k));
@@ -126,7 +130,13 @@ test('the CLI report prints every finding type the engine produces', () => {
 });
 
 test('the extension prints every finding type the engine produces', () => {
-  const missing = FINDING_TYPES().filter((k) => !ext.includes(`d.${k}`));
+  // Yalniz INSPECT gorunumune bak: dosyanin tamaminda `d.` arayan bir kalip,
+  // ilgisiz bir yerdeki `d.sessions`i bulgu alani sanip yaniltiyor.
+  const i = ext.indexOf("register('uisight.inspect'");
+  const j = ext.indexOf("register('uisight.send'", i);
+  assert.ok(i > 0 && j > i, 'the inspect renderer must be findable');
+  const renderer = ext.slice(i, j);
+  const missing = FINDING_TYPES().filter((k) => !renderer.includes(`d.${k}`));
   assert.deepEqual(missing, [], `measured but never shown in the editor: ${missing.join(', ')}`);
 });
 
