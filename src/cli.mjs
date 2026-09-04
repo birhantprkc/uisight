@@ -17,6 +17,7 @@ import { join, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exec } from 'node:child_process';
 import { platform } from 'node:os';
+import { createRequire } from 'node:module';
 import { checkForUpdate, currentVersion } from './update-check.mjs';
 
 // --- Device profiles --------------------------------------------------------
@@ -133,12 +134,27 @@ const slug = (s) => (s.replace(/^\//, '').replace(/[^a-zA-Z0-9]+/g, '-').replace
 export function missingBrowser(e, engine) {
   const s = String(e);
   if (!/Executable doesn't exist|playwright install|browserType\.launch/i.test(s)) return e;
-  return new Error(
+  // Pin the version. Playwright ties each release to one browser build, so a
+  // bare `npx playwright install` fetches whatever is newest and can leave the
+  // exact gap it was meant to close — which is how a machine with three
+  // chromium builds still reported none.
+  let pinned = 'playwright';
+  try {
+    // Resolved, not guessed at a path: under npx, playwright is hoisted beside
+    // uisight rather than nested under it.
+    const { version } = createRequire(import.meta.url)('playwright/package.json');
+    pinned = `playwright@${version}`;
+  } catch {}
+  const hata = new Error(
     `${engine} is not installed yet.\n\n` +
-    `  npx playwright install ${engine}\n\n` +
+    `  npx ${pinned} install ${engine}\n\n` +
     `Playwright ships the driver over npm but downloads browsers separately (~150 MB, once).\n` +
-    `For real iOS Safari on iPhone profiles, add webkit: npx playwright install chromium webkit`
+    `For real iOS Safari on iPhone profiles, add webkit: npx ${pinned} install chromium webkit`
   );
+  // Someone whose only problem is "run one command" should not have to read a
+  // stack trace to find it.
+  hata.hint = true;
+  return hata;
 }
 
 /**
@@ -1625,5 +1641,5 @@ ${cards}
 
 // Only run as a CLI when invoked directly — server.mjs imports this file.
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  main().catch((e) => { console.error(e); process.exit(1); });
+  main().catch((e) => { console.error(e.hint ? `\n  ${e.message}\n` : e); process.exit(1); });
 }

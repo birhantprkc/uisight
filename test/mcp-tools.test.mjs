@@ -107,7 +107,12 @@ test('a missing browser is explained, and other errors pass through untouched', 
   );
   const explained = missingBrowser(playwrightSays, 'chromium');
   assert.notEqual(explained, playwrightSays, 'the raw Playwright error must not reach the user');
-  assert.match(explained.message, /npx playwright install chromium/, 'it must name the exact command to run');
+  // Pinned, not bare. A machine with three chromium builds still reported none,
+  // because the floating dependency had moved to a Playwright release tied to a
+  // fourth — so `npx playwright install` can fetch the wrong one and leave the
+  // gap open.
+  assert.match(explained.message, /npx playwright@\d+\.\d+\.\d+ install chromium/, 'it must name the exact command, at the version in use');
+  assert.ok(explained.hint, 'flagged so the CLI prints the fix instead of a stack trace');
 
   // Swallowing unrelated failures would be worse than the original problem.
   const unrelated = new Error('net::ERR_CONNECTION_REFUSED at http://localhost:3000');

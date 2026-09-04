@@ -28,6 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { PROFILES, deviceSettings, INSPECTION_SCRIPT, PERMISSION_HOOKS, missingBrowser } from './cli.mjs';
 import { signIn, switchRole, recipeFor, accountNames, checkPort } from './login.mjs';
 import { checkForUpdate } from './update-check.mjs';
+import { normalizeTarget } from './target-url.mjs';
 
 
 // Live artifacts live under the user's home — never inside the package (npx → node_modules).
@@ -66,8 +67,13 @@ for (let i = 0; i < argv.length; i++) {
   if (a.startsWith('--')) continue;
   if (!targetUrl) targetUrl = a;
 }
-targetUrl = targetUrl || 'http://localhost:3000';
-if (!/^https?:\/\//.test(targetUrl)) targetUrl = 'http://' + targetUrl;
+const hedef = normalizeTarget(targetUrl);
+if (hedef.error) {
+  console.error(`  ! not a page this can measure: ${hedef.error}`);
+  console.error('    Give an http(s) address, e.g. http://localhost:3000');
+  process.exit(2);
+}
+targetUrl = hedef.url;
 
 const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || arg('--port', 5055));
 checkPort(PORT);
@@ -796,7 +802,7 @@ const readBody = (req) => new Promise((c) => {
   req.on('error', () => c({}));
 });
 
-const server = createServer(async (req, res) => {
+const handleRequest = async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
 
   // DNS-rebinding guard: even if an attacker's domain resolves to loopback, the Host header will not match.
@@ -927,6 +933,19 @@ const server = createServer(async (req, res) => {
   }
 
   res.writeHead(404); res.end('not found');
+};
+
+// A throw inside a handler used to destroy the connection with no reply, which
+// reads to every caller as "nothing is running there". An endpoint may fail;
+// the panel must still answer.
+const server = createServer((req, res) => {
+  handleRequest(req, res).catch((e) => {
+    console.error('  ! request failed:', String(e).split('\n')[0].slice(0, 160));
+    try {
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, message: String(e).slice(0, 200) }));
+    } catch {}
+  });
 });
 
 // --- Panel ---
@@ -1230,7 +1249,10 @@ try {
     openSession('mobile', arg('--device', 'pixel'), state.theme),
   ].filter(Boolean));
 } catch (e) {
-  state.error = String(e).split('\n')[0].slice(0, 200);
+  // missingBrowser() answers with the fix on its second line, and keeping only
+  // the first threw that away -- which is the whole message for someone who
+  // just installed this and has no browser downloaded yet.
+  state.error = String(e.message || e).slice(0, 400);
   console.error('  ! session setup failed:', state.error);
 }
 

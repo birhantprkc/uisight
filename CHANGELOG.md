@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.27.0 — 2026-09-05
+
+Installing the published package and using it as a stranger found four things.
+
+**A fresh install has no browser, and the advice for fixing that was wrong.**
+Playwright's npm package carries no install hook, so `npx -y uisight <url>`
+downloads the driver and nothing to drive. The message that explains this named
+`npx playwright install chromium` — unpinned. Playwright ties each release to
+one browser build, and this machine, with three chromium builds already on it,
+still reported none: the floating `^1.62.0` had moved to 1.63.0, which wants a
+fourth. The command is pinned to the version actually in use now, and it prints
+on its own instead of underneath a stack trace.
+
+**A target the panel could not parse left it half-alive.** `about:blank` became
+`http://about:blank`, and that string was carried all the way into `/state`,
+where it threw. The panel still served its HTML — so it looked fine in a browser
+— while the endpoint that discovery, `uisight-audit` and the MCP tools all read
+was killing the socket. As far as anything else was concerned, no panel was
+running. Targets are checked at the door now, in their own module so the rule
+can be tested without launching a browser: the first version of it refused
+`localhost:3000`, which is how most people start this, and a test caught that
+before it shipped.
+
+**A throw in any handler dropped the connection with no reply.** One endpoint
+failing should not read to every caller as "nothing is running there". Handlers
+answer 500 now.
+
+**`--help` reached the four commands** (0.26.0) after this same exercise showed
+three of them ignoring it.
+
 ## 0.26.0 — 2026-09-05
 
 The command in the README did not work.
