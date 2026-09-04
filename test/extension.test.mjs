@@ -234,3 +234,31 @@ test('the MCP refuses a panel that is serving a different app', () => {
   assert.match(mcp, /panelMatchesTarget/, 'attaching blindly measures the wrong application');
   assert.match(mcp, /serving a different app/, 'and it has to say so out loud');
 });
+
+/**
+ * Frame freshness.
+ *
+ * The panel keeps the last screencast frame because reusing it is free. But
+ * Chromium only sends frames when something repaints, so on a page that has
+ * settled the cached frame simply ages — measured at 25 seconds on an idle page.
+ * If the view changed without a frame arriving (a scroll whose repaint landed
+ * before the scroll finished, say), `see_screen` hands the model an old picture
+ * while `inspect` reads the live DOM. The two disagree, and the disagreement
+ * reads as "the layout broke". That was reported from the field.
+ *
+ * A fresh capture costs 35ms, so the age decides: fast path while the screencast
+ * keeps up, fresh capture when it does not.
+ */
+test('a stale cached frame is replaced rather than served', () => {
+  assert.match(server, /lastFrameAt/, 'the frame must carry a timestamp');
+  assert.match(server, /yas < 250/, 'and a freshness threshold that rejects an old one');
+  assert.match(server, /x-frame-age/, 'and the age must be visible for debugging');
+});
+
+test('the freshness threshold is short enough to matter and long enough to be useful', () => {
+  const m = server.match(/yas < (\d+)/);
+  assert.ok(m, 'threshold must be a literal');
+  const ms = Number(m[1]);
+  assert.ok(ms >= 100, `below ~100ms every call re-captures for nothing, got ${ms}`);
+  assert.ok(ms <= 500, `above ~500ms a changed view can still be served stale, got ${ms}`);
+});

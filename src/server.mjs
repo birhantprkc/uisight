@@ -295,6 +295,7 @@ async function startStream(o) {
 
 function handleFrame(o, b64) {
   o.lastFrame = b64;
+  o.lastFrameAt = Date.now();   // yasini bilmeden tazeligine guvenemeyiz
   broadcast('frame', { session: o.id, img: b64 });
   const t = Date.now();
   if (t - o.lastWrite > 1000) {
@@ -844,6 +845,7 @@ const server = createServer(async (req, res) => {
       let buf = null;
       let clipped = null;
       let size = null;
+      let frameAge = null;
 
       if (full) {
         // A long page has no ceiling: 10,500px is ~5,800 tokens at full size and
@@ -870,14 +872,27 @@ const server = createServer(async (req, res) => {
         }
         // Scale 1, or no CDP: the cached screencast frame is already the cheapest
         // path — no extra capture at all.
+        // Onbellekli screencast karesi ucuzdur ama DOGRU olmasi screencast'in
+        // ayak uydurmasina baglidir. Uyduramadiginda — durmus akis, mesgul sayfa,
+        // yedek yola dusme — ajan sessizce ESKI ekrani gorur ve "layout bozuldu"
+        // gibi bir sonuca varir. Sahadan boyle bir bildirim geldi; burada
+        // tekrarlanamadi ama hata yapisal olarak mumkun ve sonucu agir.
+        //
+        // Cozum yasa bakmak: taze kare varsa onu kullan (bedava), yaslanmissa
+        // yeniden yakala (olculdu: 35ms). Screencast durursa kendiliginden
+        // duzelir ve x-frame-age basligi ne oldugunu soyler.
+        const yas = o.lastFrameAt ? Date.now() - o.lastFrameAt : Infinity;
+        frameAge = yas;
         if (!buf) {
-          buf = o.lastFrame ? Buffer.from(o.lastFrame, 'base64')
-                            : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' });
+          buf = (o.lastFrame && yas < 250)
+            ? Buffer.from(o.lastFrame, 'base64')
+            : await o.page.screenshot({ type: 'jpeg', quality: 85, scale: 'css' });
         }
       }
 
       const head = { 'content-type': 'image/jpeg', 'x-session': o.id, 'x-scale': String(scale) };
       if (clipped) head['x-clipped'] = clipped;
+      if (frameAge != null) head['x-frame-age'] = String(Math.round(frameAge));
       res.writeHead(200, head);
       return res.end(buf);
     } catch (e) {

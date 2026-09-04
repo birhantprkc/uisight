@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.23.0 — 2026-09-05
+
+`see_screen` could hand the model a picture 25 seconds old.
+
+The panel keeps the last screencast frame because reusing it is free. But
+Chromium only sends frames when something repaints, so once a page settles the
+cached frame just ages — measured at 25 seconds on an idle page. If the view had
+changed without a frame arriving, the model got the old picture while `inspect`
+read the live DOM. The two disagree, and the disagreement reads as "the layout
+broke". Reported from a session auditing a different app.
+
+It did not reproduce on demand here — the screencast kept up through navigation
+and scrolling — but the mechanism is structural and the consequence is an agent
+drawing a confident conclusion from a stale image. A fresh capture costs 35ms,
+measured, so the frame's age now decides: cached while the screencast keeps up,
+re-captured when it does not. `x-frame-age` says which happened.
+
 ## 0.22.0 — 2026-09-05
 
 Running the audit behind a real login found three things, and two were mine.
