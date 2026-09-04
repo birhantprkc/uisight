@@ -27,6 +27,7 @@ import { homedir, platform } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PROFILES, deviceSettings, INSPECTION_SCRIPT, PERMISSION_HOOKS, missingBrowser } from './cli.mjs';
 import { signIn, switchRole, recipeFor, accountNames, checkPort } from './login.mjs';
+import { checkForUpdate } from './update-check.mjs';
 
 
 // Live artifacts live under the user's home — never inside the package (npx → node_modules).
@@ -51,6 +52,7 @@ if (!/^https?:\/\//.test(targetUrl)) targetUrl = 'http://' + targetUrl;
 
 const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || arg('--port', 5055));
 checkPort(PORT);
+checkForUpdate();            // arka planda, beklenmez
 // Tam sayfa goruntusunun tavani (Claude'da ~ genislik*yukseklik/750 token).
 // Ortamdan buyutulebilir: UISIGHT_MAX_IMAGE_TOKENS=4000
 const MAX_IMAGE_TOKENS = Number(process.env.UISIGHT_MAX_IMAGE_TOKENS || 2000);

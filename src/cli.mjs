@@ -17,6 +17,7 @@ import { join, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exec } from 'node:child_process';
 import { platform } from 'node:os';
+import { checkForUpdate } from './update-check.mjs';
 
 // --- Device profiles --------------------------------------------------------
 // webkit = the real iOS Safari rendering engine (it does run on Windows).
@@ -832,6 +833,7 @@ async function canliAc(url, cihazAnahtar) {
 
 // --- Main flow ---------------------------------------------------------------
 async function main() {
+  checkForUpdate();          // arka planda, beklenmez
   const o = parseArgs(process.argv.slice(2));
   if (o.printHelp || !o.url) { printHelp(); process.exit(o.url ? 0 : 1); }
   if (!/^https?:\/\//.test(o.url)) o.url = 'https://' + o.url;

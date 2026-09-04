@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.10.0 — 2026-09-04
+
+Everything shipped since 0.1.4 is invisible to the person still running 0.1.4.
+npm installs a version and then never mentions it again, so the people most
+likely to hit a bug that is already fixed are exactly the ones who cannot find
+out.
+
+**A version check that says one line and gets out of the way.** Once a day,
+cached on disk, 2s timeout, silent on any failure, off with `NO_UPDATE_NOTIFIER=1`
+and off in CI. Nothing is sent anywhere — it is the same public GET `npm view`
+makes.
+
+It writes to **stderr**, and that is the whole risk: the MCP server speaks
+JSON-RPC over stdout, where one stray line corrupts the stream and the tool dies
+looking like nothing at all. So a test starts the real server with a notice
+guaranteed to fire and proves stdout stayed pure JSON — the notice must actually
+appear on stderr, or the test proves nothing.
+
+Version comparison is numeric, because as strings `"0.9.0" > "0.10.0"` and every
+user on 0.10 would be told to downgrade.
+
 ## 0.9.0 — 2026-09-04
 
 Someone ran this and watched their plan drain with no way to see where it went.

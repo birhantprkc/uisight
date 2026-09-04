@@ -8,3 +8,4 @@ canli/
 package-lock.json
 extension/*.vsix
 .tools/
+extension/*.vsix

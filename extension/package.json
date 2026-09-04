@@ -2,7 +2,7 @@
   "name": "uisight",
   "displayName": "uisight — live mobile panel",
   "description": "See the running app on a phone screen inside your editor, switch device and theme, and measure what a screenshot cannot: contrast, touch targets, covered controls.",
-  "version": "1.2.4",
+  "version": "1.3.0",
   "publisher": "sololabs",
   "private": false,
   "engines": {
@@ -98,8 +98,8 @@
         },
         "uisight.toolPath": {
           "type": "string",
-          "default": "c:\\dev\\uisight",
-          "description": "Folder holding src/server.mjs and node_modules."
+          "default": "",
+          "description": "Optional: a local uisight checkout to run instead of the published package. Leave empty and the extension uses npx uisight@latest, which keeps the engine up to date on its own."
         },
         "uisight.nodePath": {
           "type": "string",
@@ -131,5 +131,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/sololabstr/uisight"
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e1f22",
+    "theme": "dark"
   }
 }

@@ -27,6 +27,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkPort } from './login.mjs';
+import { checkForUpdate } from './update-check.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const PORT = Number(process.env.UISIGHT_PORT || process.env.MOBILQA_PORT || 5055);
@@ -303,6 +304,7 @@ tool('marks', 'isaretler',
   });
 
 // --- Start ---
+checkForUpdate();            // stderr'e yazar; stdout JSON-RPC'nin
 const transport = new StdioServerTransport();
 await server.connect(transport);
 log(`ready — panel: ${BASE}${TR ? ' (lang=tr)' : ''}`);

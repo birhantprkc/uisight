@@ -11,7 +11,7 @@ let statusItem = null;
 
 const config = () => vscode.workspace.getConfiguration('uisight');
 const port = () => config().get('port', 5055);
-const toolPath = () => config().get('toolPath', 'c:\\dev\\uisight');
+const toolPath = () => config().get('toolPath', '');
 
 // --- Sunucu ile konusma ---
 /**
@@ -57,23 +57,44 @@ const isServerUp = () => request('/state').then((d) => !!d).catch(() => false);
 async function startServer(output) {
   if (await isServerUp()) return true; // baska bir oturum zaten calisiyor
 
+  const a = config();
+  const common = [
+    `"${a.get('url', 'http://localhost:3000')}"`,
+    '--port', String(port()),
+    '--device', a.get('device', 'pixel'),
+    '--theme', a.get('theme', 'light'),
+    '--no-open',                       // panel bu pencerede; harici tarayici acma
+  ];
+
+  // Iki yol, bu sirayla:
+  //
+  //   1. Ayarin gosterdigi yerel kopya — gelistirme icin, degisiklikler aninda.
+  //   2. Yayinlanan paket, `npx -p uisight@latest` ile.
+  //
+  // Ikincisi eklentinin baska bir makinede calisabilmesinin TEK yolu: onceki
+  // surumler `c:\dev\uisight` yoluna civiliydi, yani baskasina verilebilir bir
+  // eklenti degildi. Ve `@latest` motoru kendiliginden guncel tutar — bir kez
+  // kurulan eklenti yeni kontrolleri almaya devam eder.
   const root = toolPath();
   const entry = path.join(root, 'src', 'server.mjs');
-  if (!fs.existsSync(entry)) {
-    vscode.window.showErrorMessage(`uisight: src/server.mjs not found — set "uisight.toolPath" in settings (currently: ${root})`);
-    return false;
+  const local = fs.existsSync(entry);
+
+  const nodeCommand = local ? a.get('nodePath', 'node') : 'npx';
+  const args = local
+    ? [`"${entry}"`, ...common]
+    : ['-y', '-p', 'uisight@latest', 'uisight-panel', ...common];
+  const cwd = local ? root : undefined;
+
+  if (!local) {
+    output.appendLine('[bilgi] yerel kopya yok -> yayinlanan paket (npx uisight@latest).');
+    output.appendLine('[bilgi] ilk calistirma paketi ve tarayiciyi indirir, bir kereye mahsus birkac dakika surebilir.');
   }
 
-  const a = config();
-  const nodeCommand = a.get('nodeYolu', 'node');
-  const args = [`"${entry}"`, `"${a.get('url', 'http://localhost:3000')}"`, '--port', String(port()),
-    '--device', a.get('device', 'pixel'), '--theme', a.get('theme', 'light'), '--acma'];
-
-  output.appendLine(`[baslatiliyor] ${nodeCommand} ${args.join(' ')}  (cwd: ${root})`);
+  output.appendLine(`[baslatiliyor] ${nodeCommand} ${args.join(' ')}${cwd ? `  (cwd: ${cwd})` : ''}`);
   let spawnError = null;
   try {
     // shell:true -> Windows'ta "node" PATH uzerinden cozulur (spawn tek basina cozemeyebiliyor).
-    serverProcess = spawn(nodeCommand, args, { cwd: root, windowsHide: true, shell: true });
+    serverProcess = spawn(nodeCommand, args, { cwd, windowsHide: true, shell: true });
   } catch (e) {
     spawnError = e.message;
   }
@@ -93,7 +114,7 @@ async function startServer(output) {
   }
 
   const reason = spawnError
-    ? `node calistirilamadi: ${spawnError} — ayarlardan "uisight.nodeYolu" degerine node.exe'nin tam yolunu yaz.`
+    ? `could not run node: ${spawnError} — put the full path to node.exe in "uisight.nodePath".`
     : 'sunucu 30 sn icinde response vermedi.';
   output.appendLine(`[HATA] ${reason}`);
   output.show(true);

@@ -65,15 +65,14 @@ test('the webview id the manifest declares is the one the extension provides', (
 
 const slashes = (s) => s.split(String.fromCharCode(92)).join('/');
 
-test('the default tool path points at a uisight checkout, not the retired fork', () => {
-  // The default is a machine-local convenience — asserting it equals THIS
-  // checkout passed here and failed on CI, where the repo lives somewhere else.
-  // What actually matters is that it still names uisight: the extension spent a
-  // while pointing at the retired mobil-qa folder, which is how it ended up
-  // talking to a server that no longer existed.
+test('the default tool path is empty, so a fresh install runs the published package', () => {
+  // It used to default to c:/dev/uisight — this machine's checkout, which meant
+  // the extension could not work on anyone else's computer. Empty means "use
+  // npx uisight@latest", which is both portable and self-updating.
   const p = slashes(manifest.contributes.configuration.properties['uisight.toolPath'].default);
-  assert.match(p, /\/uisight\/?$/, `default toolPath should end in /uisight, got ${p}`);
-  assert.doesNotMatch(p, /mobil-qa/, 'the fork is retired');
+  assert.equal(p, '', 'a machine-specific default makes the extension unpublishable');
+  assert.match(ext, /'uisight@latest'/, 'the fallback must pin @latest, or installs freeze');
+  assert.doesNotMatch(ext, /mobil-qa/, 'the fork is retired');
 });
 
 test('the narrow-mode flag the extension sends is one the panel reads', () => {
