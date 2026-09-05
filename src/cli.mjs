@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { exec } from 'node:child_process';
 import { platform } from 'node:os';
 import { createRequire } from 'node:module';
+import { offerInstall } from './install-browser.mjs';
 import { checkForUpdate, currentVersion } from './update-check.mjs';
 
 // --- Device profiles --------------------------------------------------------
@@ -1245,6 +1246,12 @@ async function tur(o) {
 
   const records = [];
   const engineCache = {};
+
+  // A first run arrives with the driver and nothing to drive: Playwright's npm
+  // package has no install hook. Asking here, before the loop, is kinder than
+  // failing inside it -- and it only asks where there is someone to answer.
+  const gerekenMotorlar = [...new Set(o.device.map((k) => PROFILES[k]?.engine).filter(Boolean))];
+  if (gerekenMotorlar.length) await offerInstall(gerekenMotorlar, { chromium, webkit });
 
   for (const key of o.device) {
     const p = PROFILES[key];

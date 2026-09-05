@@ -34,6 +34,16 @@ npx -y -p uisight uisight-panel http://localhost:3000   # canlı panel: sen gez,
 npx -y -p uisight uisight-audit                  # giriş yapıp her rolü gezer
 ```
 
+**İlk çalıştırma.** Playwright sürücüsünü npm ile getirir ama tarayıcıları ayrı
+indirir; yani ilk çalıştırmada sürülecek bir şey yoktur. Terminaldeyseniz uisight
+gerekeni indirmeyi teklif eder (~150 MB, bir kez) ve indirmeyi gösterir. Cevap
+verecek kimse yoksa — CI, ya da editörün/ajan sunucusunun başlattığı bir panel —
+ne sorar ne indirir; komutu söyler. `UISIGHT_NO_INSTALL=1` teklifi tamamen kapatır:
+
+```bash
+npx playwright install chromium        # gerçek iOS Safari motoru için webkit ekleyin
+```
+
 MCP kaydı (Claude Code): `claude mcp add --scope user uisight -- npx -y -p uisight@latest uisight-mcp`
 
 Türkçe araç adları için: `UISIGHT_LANG=tr` (`ekrani_gor`, `denetle`, `git`, `tikla`, `yaz`, `kaydir`, `cihaz_degistir`, `durum`, `isaretler`).

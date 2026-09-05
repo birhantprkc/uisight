@@ -60,14 +60,22 @@ Scope note: uisight is for **web and responsive UIs**. For native iOS/Android ap
 ## Quickstart
 
 ```bash
-# once per machine: Playwright ships over npm but downloads browsers separately
-npx playwright install chromium webkit   # ~300 MB; chromium alone is enough to start
-
 # one-shot audit: PNGs + gallery + report for iPhone/Pixel/desktop, light+dark
 npx uisight https://yourapp.com --theme both
 
 # live panel: mobile + desktop side by side, you browse, AI watches (and vice versa)
 npx -y -p uisight uisight-panel http://localhost:3000
+```
+
+**First run.** Playwright ships its driver over npm but downloads browsers
+separately, so the first run has nothing to drive. In a terminal, uisight offers
+to fetch what it needs (~150 MB, once) and shows the download. Where there is
+nobody to answer — CI, or a panel an editor or agent host started — it never
+asks and never downloads; it names the exact command instead. `UISIGHT_NO_INSTALL=1`
+turns the offer off everywhere, and you can always do it yourself:
+
+```bash
+npx playwright install chromium        # add webkit for the real iOS Safari engine
 ```
 
 The one-shot audit produces a device × theme gallery with findings per card:

@@ -29,6 +29,7 @@ import { PROFILES, deviceSettings, INSPECTION_SCRIPT, PERMISSION_HOOKS, missingB
 import { signIn, switchRole, recipeFor, accountNames, checkPort } from './login.mjs';
 import { checkForUpdate } from './update-check.mjs';
 import { normalizeTarget } from './target-url.mjs';
+import { offerInstall } from './install-browser.mjs';
 
 
 // Live artifacts live under the user's home — never inside the package (npx → node_modules).
@@ -1239,6 +1240,11 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  Antigravity/VS Code: Ctrl+Shift+P -> "Simple Browser: Show" -> ${address}\n`);
   if (!NO_OPEN) openInBrowser(address);
 });
+
+// The same first-run wall as the CLI. Only asked where there is a terminal to
+// answer in: the extension and MCP hosts start this with no stdin attached, and
+// a question nobody can see would look like a hang.
+await offerInstall(['chromium'], { chromium });
 
 // Browser sessions are separate: even if this throws, the server stays up and the panel shows the error.
 try {

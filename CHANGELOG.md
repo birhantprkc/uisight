@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.28.0 — 2026-09-05
+
+It fetches the browser itself now, if you say yes.
+
+Playwright's npm package has no install hook, so a fresh `npx uisight` arrives
+with a driver and nothing to drive. 0.27.0 made the message about that exact and
+readable; this removes the wall for anyone who would rather not read it. In a
+terminal the first run asks — naming the size and that it happens once — and
+Playwright's own progress is shown rather than swallowed, because a download this
+long with no output looks like a hang.
+
+The interesting half is where it does **not** ask. The panel and the MCP server
+are normally started by an editor or an agent host with no terminal attached, and
+a question nobody can see is indistinguishable from a hang; CI is worse, since a
+150 MB download nobody asked for is somebody's bill. So the offer requires a real
+stdin and stdout, and stands down on `CI` or `UISIGHT_NO_INSTALL=1` — there it
+falls back to naming the command, which is what it did before. The tests are
+mostly about that negative: what must not happen, where.
+
+The install command is resolved out of the Playwright that is actually installed
+rather than assembled from a guessed path, so it works the same under `npx`,
+where Playwright is hoisted beside uisight instead of nested under it.
+
 ## 0.27.0 — 2026-09-05
 
 Installing the published package and using it as a stranger found four things.
