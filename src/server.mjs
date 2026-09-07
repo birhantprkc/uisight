@@ -963,13 +963,30 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
   #url { flex:1; min-width:160px; }
   #toastLine { min-width:170px; }
   .gov { flex:1; display:flex; gap:14px; padding:14px; overflow:auto; align-items:flex-start; }
-  .ekranlar { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  /* flex:1 1 0 with min-width:0, so this column's width comes from the row and
+     NOT from what is inside it. Content-sized, it fed the frame scale its own
+     output: the scale set the image width, the image width set this column, and
+     the column set the scale again. It settled at 0.158 and stopped responding
+     to the window. */
+  .ekranlar { flex:1 1 0; min-width:0; display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  /* The card is as wide as its frame. Left to size itself, the header -- label
+     plus device select plus pin -- was wider than a 412px phone frame and the
+     card stretched to fit the header instead of the screen. */
+  /* No width here on purpose: with the global border-box, setting the card
+     width to the frame width took the padding and border OUT of the frame --
+     20px off both cards, which is proportionally far more for a 412px phone
+     than a 1440px desktop, and the two ended up at different scales again. The
+     card sizes to its frame; the header just has to stop pushing it wider. */
   .tel { background:#111214; border:2px solid #45474d; border-radius:16px; padding:8px; }
+  .tel header { max-width:100%; flex-wrap:nowrap; gap:4px; }
+  .tel header > b { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tel header select { flex:1 1 0; min-width:0; width:0; }
+  .tel header .pin { flex:0 0 auto; }
   .tel.aktif { border-color:#4c6fd6; }
   .tel header { display:flex; gap:6px; align-items:center; padding:2px 4px 8px; font-size:11px; color:#9da0a8; }
   .tel header select { font-size:11px; padding:2px 6px; }
   .tel header .pin { padding:2px 8px; }
-  .tel img { display:block; border-radius:10px; background:#000; cursor:default; max-height:74vh; width:auto; max-width:46vw; }
+  .tel img { display:block; border-radius:10px; background:#000; cursor:default; width:var(--kare, auto); max-width:100%; height:auto; }
   /* Crosshair only while selecting. A permanent one made simply looking at the
      panel feel like something was being demanded of you. */
   .tel.picking img { cursor:crosshair; }
@@ -978,7 +995,7 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
   .pickHint { position:absolute; left:8px; right:8px; top:8px; z-index:3; text-align:center;
     background:#1e1f22e6; border:1px solid #4c6fd6; border-radius:6px; padding:6px 8px; font-size:12px; display:none; }
   .tel.picking .pickHint { display:block; }
-  .yan { flex:1; min-width:230px; display:flex; flex-direction:column; gap:10px; }
+  .yan { flex:0 0 clamp(240px, 22%, 340px); min-width:0; display:flex; flex-direction:column; gap:10px; }
 
   /* Dar mod (?narrow=1) — IDE kenar cubugu icin.
      Kenar cubugu ~300px; iki ekran YAN YANA sigmaz — telefon cercevesi tek
@@ -1145,6 +1162,47 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
     document.querySelectorAll('.tel').forEach((t) => t.classList.toggle('aktif', t.dataset.session === activeSession));
   }
 
+  /**
+   * One scale for every frame.
+   *
+   * Each card used to be fitted on its own, so a 1440px desktop landed at 0.61
+   * of life size while a 412px phone next to it sat at 0.88 -- the phone drawn
+   * nearly one and a half times larger per CSS pixel than the desktop beside
+   * it. Putting them side by side is the whole point of this view, and at two
+   * different scales the comparison says nothing.
+   *
+   * So: find the largest scale at which every session still fits its share of
+   * the row, and give them all that one. A phone then looks like a phone next
+   * to a desktop, because it is one.
+   */
+  function olcekleriEsitle() {
+    if (document.body.classList.contains('narrow')) return;   // dar modda tek sutun, kendi kurali var
+    const kap = document.getElementById('ekranlar');
+    const kartlar = [...kap.querySelectorAll('.tel')];
+    if (!kartlar.length) return;
+    const bosluk = 14, cerceve = 20;                          // gap + padding/border
+    // Share the row in proportion to the viewports, not equally. Split evenly, a
+    // 412px phone is handed the same width as a 1440px desktop, leaves most of
+    // it empty, and the desktop -- the one that actually needs the room --
+    // forces the common scale down for both.
+    const gorunumler = kartlar.map((k) => vp[k.dataset.session]).filter((v) => v && v.width && v.height);
+    if (!gorunumler.length) return;
+    const toplamGenislik = gorunumler.reduce((a, v) => a + v.width, 0);
+    const enYuksek = Math.max(...gorunumler.map((v) => v.height));
+    // 4px of slack. Filling the row exactly, sub-pixel rounding tipped the last
+    // card onto a second line -- which is the one thing this layout must not do.
+    const kullanilabilir = Math.max(240, kap.clientWidth - bosluk * (kartlar.length - 1) - cerceve * kartlar.length - 4);
+    const payYukseklik = Math.max(200, innerHeight * 0.74);
+    let olcek = Math.min(kullanilabilir / toplamGenislik, payYukseklik / enYuksek);
+    if (!isFinite(olcek) || olcek <= 0) return;
+    olcek = Math.min(olcek, 1);                               // hicbir kare gercek boyutunun ustune cikmaz
+    for (const k of kartlar) {
+      const v = vp[k.dataset.session];
+      if (v && v.width) k.style.setProperty('--kare', Math.round(v.width * olcek) + 'px');
+    }
+  }
+  addEventListener('resize', olcekleriEsitle);
+
   function panelleriGuncelle(d) {
     const kap = document.getElementById('ekranlar');
     for (const o of d.sessions) {
@@ -1157,6 +1215,7 @@ const PANEL_HTML_SABLON = `<!doctype html><html lang="en"><head><meta charset="u
       // 44px touch target look like 110px. Judging a phone layout from that is
       // worse than not seeing it.
       if (o.viewport && o.viewport.width) pane.style.setProperty('--vp', o.viewport.width + 'px');
+      olcekleriEsitle();
       const sel = pane.querySelector('select');
       if (!sel.options.length && deviceList.length) {
         for (const c of deviceList) { const op = document.createElement('option'); op.value = c.k; op.textContent = c.label; sel.appendChild(op); }

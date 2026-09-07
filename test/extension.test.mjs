@@ -360,3 +360,24 @@ test('the side bar never blows a phone frame up past life size', () => {
   assert.match(server, /body\.narrow \.tel img \{[^}]*max-width:min\(100%, var\(--vp/,
     'the frame must be capped at the device width as well as the container');
 });
+
+test('the two frames are drawn at one scale, from a width their content cannot move', () => {
+  // Each card used to be fitted on its own: a 1440px desktop landed at 0.61 of
+  // life size while the 412px phone beside it sat at 0.88 — the phone drawn
+  // nearly one and a half times larger per CSS pixel than the desktop next to
+  // it. Putting them side by side is the point of this view, and at two scales
+  // the comparison says nothing.
+  assert.match(server, /function olcekleriEsitle/, 'one scale has to be computed somewhere');
+  assert.match(server, /\.tel img \{[^}]*width:var\(--kare/, 'the frame width comes from that scale');
+
+  // The first attempt read the container's own width, which the images set —
+  // the scale fed itself, settled at 0.158 and stopped answering the window.
+  assert.match(server, /\.ekranlar \{[^}]*flex:1 1 0;[^}]*min-width:0/,
+    'the screens column must take its width from the row, not from its content');
+
+  // Split evenly, the phone is handed as much room as the desktop, wastes it,
+  // and drags the shared scale down for both.
+  assert.match(server, /toplamGenislik/, 'the row is shared in proportion to the viewports');
+  assert.doesNotMatch(server, /\.tel \{[^}]*width:var\(--kare/,
+    'with border-box, giving the card that width takes the padding out of the frame — 20px off both, which is proportionally far more for the phone');
+});
